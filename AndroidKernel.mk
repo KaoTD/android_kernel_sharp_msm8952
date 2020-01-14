@@ -1,19 +1,6 @@
 #Android makefile to build kernel as a part of Android Build
 PERL		= perl
 
-ifeq ($(TARGET_COMPILE_WITH_MSM_KERNEL),true)
-ifndef TARGET_BOARD_PLATFORM
-$(error TARGET_BOARD_PLATFORM is not defined)
-endif
-
-ifneq ($(wildcard kernel/qcom/$(TARGET_BOARD_PLATFORM)),)
-KERNEL:=kernel/qcom/$(TARGET_BOARD_PLATFORM)/
-BASE:=../../../
-else
-KERNEL=kernel/
-BASE:=../
-endif
-
 KERNEL_TARGET := $(strip $(INSTALLED_KERNEL_TARGET))
 ifeq ($(KERNEL_TARGET),)
 INSTALLED_KERNEL_TARGET := $(PRODUCT_OUT)/kernel
@@ -60,8 +47,7 @@ ifeq ($(strip $(KERNEL_GCC_NOANDROID_CHK)),0)
 KERNEL_CFLAGS := KCFLAGS=-mno-android
 endif
 
-KERNEL_OBJ := $(KERNEL)
-KERNEL_OUT := $(TARGET_OUT_INTERMEDIATES)/$(KERNEL_OBJ)
+KERNEL_OUT := $(TARGET_OUT_INTERMEDIATES)/KERNEL_OBJ
 KERNEL_CONFIG := $(KERNEL_OUT)/.config
 
 ifeq ($(KERNEL_DEFCONFIG)$(wildcard $(KERNEL_CONFIG)),)
@@ -85,8 +71,8 @@ TARGET_PREBUILT_INT_KERNEL := $(TARGET_PREBUILT_INT_KERNEL)-dtb
 endif
 
 KERNEL_HEADERS_INSTALL := $(KERNEL_OUT)/usr
-KERNEL_MODULES_INSTALL := system
-KERNEL_MODULES_OUT := $(TARGET_OUT)/lib/modules
+KERNEL_MODULES_INSTALL ?= system
+KERNEL_MODULES_OUT ?= $(TARGET_OUT)/lib/modules
 
 TARGET_PREBUILT_KERNEL := $(TARGET_PREBUILT_INT_KERNEL)
 $(info TARGET_PREBUILT_KERNEL is $(TARGET_PREBUILT_KERNEL))
@@ -107,49 +93,98 @@ mpath=`dirname $$mdpath`; rm -rf $$mpath;\
 fi
 endef
 
+ifeq ($(TARGET_BUILD_VARIANT),user)
+define format_kernel_config_engineering
+endef
+else
+define CONFIGY
+"CONFIG_DEVMEM CONFIG_DEVKMEM CONFIG_ANDROID_ENGINEERING CONFIG_SECURITY_MIYABI_ENGINEERING_BUILD CONFIG_MSM_DLOAD_MODE"
+endef
+define CONFIGN
+""
+endef
+#define CONFIGYOP
+#"CONFIG_SLUB_DEBUG CONFIG_SLUB_DEBUG_ON CONFIG_SLUB_STATS CONFIG_DEBUG_LIST CONFIG_DEBUG_STACK_USAGE CONFIG_DEBUG_ATOMIC_SLEEP CONFIG_DEBUG_PAGEALLOC"
+#endef
+define CONFIGYOP
+""
+endef
+ifeq (,$(filter-out F%, $(SH_BUILD_ID)))
+define format_kernel_config_engineering
+	perl -le '@noappear = split(/ /, $(CONFIGY)); @config_y = @noappear;\
+	@config_n = split(/ /, $(CONFIGN));\
+	while (<>) {chomp($$_); $$line = $$_ ; s/^# // ; s/[ =].+$$// ; if (/^CONFIG/) { $$config = $$_ ; \
+	if (grep {$$_ eq $$config} @config_y) { $$line = $$_ . "=y" ; @noappear = grep(!/^$$config$$/, @noappear); } \
+	elsif (grep {$$_ eq $$config} @config_n) {$$line = "# " . $$_ . " is not set" ; } } \
+	print $$line }\
+	foreach (@noappear) { print $$_ . "=y"}' $(1) > $(KERNEL_OUT)/tmp
+	rm $(1)
+	cp $(KERNEL_OUT)/tmp $(1)
+	$(MAKE) -C kernel O=../$(KERNEL_OUT) ARCH=$(KERNEL_ARCH) CROSS_COMPILE=$(KERNEL_CROSS_COMPILE) oldnoconfig
+endef
+else
+define format_kernel_config_engineering
+	perl -le 'if ($$ENV{'SH_BUILD_DEBUG'} eq "y") {@noappear = split(/ /, ($(CONFIGY) . " " . $(CONFIGYOP))); } else {@noappear = split(/ /, $(CONFIGY));} @config_y = @noappear;\
+	@config_n = split(/ /, $(CONFIGN));\
+	while (<>) {chomp($$_); $$line = $$_ ; s/^# // ; s/[ =].+$$// ; if (/^CONFIG/) { $$config = $$_ ; \
+	if (grep {$$_ eq $$config} @config_y) { $$line = $$_ . "=y" ; @noappear = grep(!/^$$config$$/, @noappear); } \
+	elsif (grep {$$_ eq $$config} @config_n) {$$line = "# " . $$_ . " is not set" ; } } \
+	print $$line }\
+	foreach (@noappear) { print $$_ . "=y"}' $(1) > $(KERNEL_OUT)/tmp
+	rm $(1)
+	cp $(KERNEL_OUT)/tmp $(1)
+	$(MAKE) -C kernel O=../$(KERNEL_OUT) ARCH=$(KERNEL_ARCH) CROSS_COMPILE=$(KERNEL_CROSS_COMPILE) oldnoconfig
+endef
+endif
+endif
+
 $(KERNEL_OUT):
 	mkdir -p $(KERNEL_OUT)
 
 $(KERNEL_CONFIG): $(KERNEL_OUT)
-	$(MAKE) -C $(KERNEL) O=$(BASE)/$(KERNEL_OUT) ARCH=$(KERNEL_ARCH) CROSS_COMPILE=$(KERNEL_CROSS_COMPILE) $(KERNEL_DEFCONFIG)
+	$(MAKE) -C kernel O=../$(KERNEL_OUT) ARCH=$(KERNEL_ARCH) CROSS_COMPILE=$(KERNEL_CROSS_COMPILE) $(KERNEL_DEFCONFIG)
 	$(hide) if [ ! -z "$(KERNEL_CONFIG_OVERRIDE)" ]; then \
 			echo "Overriding kernel config with '$(KERNEL_CONFIG_OVERRIDE)'"; \
 			echo $(KERNEL_CONFIG_OVERRIDE) >> $(KERNEL_OUT)/.config; \
-			$(MAKE) -C $(KERNEL) O=$(BASE)/$(KERNEL_OUT) ARCH=$(KERNEL_ARCH) CROSS_COMPILE=$(KERNEL_CROSS_COMPILE) oldconfig; fi
+			$(MAKE) -C kernel O=../$(KERNEL_OUT) ARCH=$(KERNEL_ARCH) CROSS_COMPILE=$(KERNEL_CROSS_COMPILE) oldconfig; fi
+	$(call format_kernel_config_engineering, $(KERNEL_CONFIG))
 
 $(TARGET_PREBUILT_INT_KERNEL): $(KERNEL_OUT) $(KERNEL_HEADERS_INSTALL)
 	$(hide) echo "Building kernel..."
 	$(hide) rm -rf $(KERNEL_OUT)/arch/$(KERNEL_ARCH)/boot/dts
-	$(MAKE) -C $(KERNEL) O=$(BASE)/$(KERNEL_OUT) ARCH=$(KERNEL_ARCH) CROSS_COMPILE=$(KERNEL_CROSS_COMPILE) $(KERNEL_CFLAGS)
-	$(MAKE) -C $(KERNEL) O=$(BASE)/$(KERNEL_OUT) ARCH=$(KERNEL_ARCH) CROSS_COMPILE=$(KERNEL_CROSS_COMPILE) $(KERNEL_CFLAGS) modules
-	$(MAKE) -C $(KERNEL) O=$(BASE)/$(KERNEL_OUT) INSTALL_MOD_PATH=$(BASE)/../$(KERNEL_MODULES_INSTALL) INSTALL_MOD_STRIP=1 ARCH=$(KERNEL_ARCH) CROSS_COMPILE=$(KERNEL_CROSS_COMPILE) modules_install
+	$(MAKE) -C kernel O=../$(KERNEL_OUT) ARCH=$(KERNEL_ARCH) CROSS_COMPILE=$(KERNEL_CROSS_COMPILE) $(KERNEL_CFLAGS)
+	$(MAKE) -C kernel O=../$(KERNEL_OUT) ARCH=$(KERNEL_ARCH) CROSS_COMPILE=$(KERNEL_CROSS_COMPILE) $(KERNEL_CFLAGS) modules
+	$(MAKE) -C kernel O=../$(KERNEL_OUT) INSTALL_MOD_PATH=../../$(KERNEL_MODULES_INSTALL) INSTALL_MOD_STRIP=1 ARCH=$(KERNEL_ARCH) CROSS_COMPILE=$(KERNEL_CROSS_COMPILE) modules_install
 	$(mv-modules)
 	$(clean-module-folder)
 
 $(KERNEL_HEADERS_INSTALL): $(KERNEL_OUT)
 	$(hide) if [ ! -z "$(KERNEL_HEADER_DEFCONFIG)" ]; then \
-			$(hide) rm -f $(BASE)/$(KERNEL_CONFIG); \
-			$(MAKE) -C $(KERNEL) O=$(BASE)/$(KERNEL_OUT) ARCH=$(KERNEL_HEADER_ARCH) CROSS_COMPILE=$(KERNEL_CROSS_COMPILE) $(KERNEL_HEADER_DEFCONFIG); \
-			$(MAKE) -C $(KERNEL) O=$(BASE)/$(KERNEL_OUT) ARCH=$(KERNEL_HEADER_ARCH) CROSS_COMPILE=$(KERNEL_CROSS_COMPILE) headers_install; fi
+			$(hide) rm -f ../$(KERNEL_CONFIG); \
+			$(MAKE) -C kernel O=../$(KERNEL_OUT) ARCH=$(KERNEL_HEADER_ARCH) CROSS_COMPILE=$(KERNEL_CROSS_COMPILE) $(KERNEL_HEADER_DEFCONFIG); \
+			$(MAKE) -C kernel O=../$(KERNEL_OUT) ARCH=$(KERNEL_HEADER_ARCH) CROSS_COMPILE=$(KERNEL_CROSS_COMPILE) headers_install; fi
 	$(hide) if [ "$(KERNEL_HEADER_DEFCONFIG)" != "$(KERNEL_DEFCONFIG)" ]; then \
 			echo "Used a different defconfig for header generation"; \
-			$(hide) rm -f $(BASE)/$(KERNEL_CONFIG); \
-			$(MAKE) -C $(KERNEL) O=$(BASE)/$(KERNEL_OUT) ARCH=$(KERNEL_ARCH) CROSS_COMPILE=$(KERNEL_CROSS_COMPILE) $(KERNEL_DEFCONFIG); fi
+			$(hide) rm -f ../$(KERNEL_CONFIG); \
+			$(MAKE) -C kernel O=../$(KERNEL_OUT) ARCH=$(KERNEL_ARCH) CROSS_COMPILE=$(KERNEL_CROSS_COMPILE) $(KERNEL_DEFCONFIG); fi
 	$(hide) if [ ! -z "$(KERNEL_CONFIG_OVERRIDE)" ]; then \
 			echo "Overriding kernel config with '$(KERNEL_CONFIG_OVERRIDE)'"; \
 			echo $(KERNEL_CONFIG_OVERRIDE) >> $(KERNEL_OUT)/.config; \
-			$(MAKE) -C $(KERNEL) O=$(BASE)/$(KERNEL_OUT) ARCH=$(KERNEL_ARCH) CROSS_COMPILE=$(KERNEL_CROSS_COMPILE) oldconfig; fi
+			$(MAKE) -C kernel O=../$(KERNEL_OUT) ARCH=$(KERNEL_ARCH) CROSS_COMPILE=$(KERNEL_CROSS_COMPILE) oldconfig; fi
+	$(call format_kernel_config_engineering, $(KERNEL_CONFIG))
 
 kerneltags: $(KERNEL_OUT) $(KERNEL_CONFIG)
-	$(MAKE) -C $(KERNEL) O=$(BASE)/$(KERNEL_OUT) ARCH=$(KERNEL_ARCH) CROSS_COMPILE=$(KERNEL_CROSS_COMPILE) tags
+	$(MAKE) -C kernel O=../$(KERNEL_OUT) ARCH=$(KERNEL_ARCH) CROSS_COMPILE=$(KERNEL_CROSS_COMPILE) tags
 
 kernelconfig: $(KERNEL_OUT) $(KERNEL_CONFIG)
 	env KCONFIG_NOTIMESTAMP=true \
-	     $(MAKE) -C $(KERNEL) O=$(BASE)/$(KERNEL_OUT) ARCH=$(KERNEL_ARCH) CROSS_COMPILE=$(KERNEL_CROSS_COMPILE) menuconfig
+	     $(MAKE) -C kernel O=../$(KERNEL_OUT) ARCH=$(KERNEL_ARCH) CROSS_COMPILE=$(KERNEL_CROSS_COMPILE) menuconfig
 	env KCONFIG_NOTIMESTAMP=true \
-	     $(MAKE) -C $(KERNEL) O=$(BASE)/$(KERNEL_OUT) ARCH=$(KERNEL_ARCH) CROSS_COMPILE=$(KERNEL_CROSS_COMPILE) savedefconfig
-	cp $(KERNEL_OUT)/defconfig kernel/arch/$(KERNEL_ARCH)/configs/$(KERNEL_DEFCONFIG)
+	     $(MAKE) -C kernel O=../$(KERNEL_OUT) ARCH=$(KERNEL_ARCH) CROSS_COMPILE=$(KERNEL_CROSS_COMPILE) savedefconfig
+#CUST_BSP start
+	sort $(KERNEL_OUT)/defconfig > $(KERNEL_OUT)/defconfig_sort
+	cp $(KERNEL_OUT)/defconfig_sort kernel/arch/$(KERNEL_ARCH)/configs/$(KERNEL_DEFCONFIG)
+#CUST_BSP end
 
 endif
 endif
-endif # TARGET_COMPILE_WITH_MSM_KERNEL

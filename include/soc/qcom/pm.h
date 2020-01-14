@@ -169,4 +169,10 @@ static inline void msm_pm_l2_add_stat(uint32_t id, int64_t t) {}
 
 void msm_pm_set_cpr_ops(struct msm_pm_cpr_ops *ops);
 extern dma_addr_t msm_pc_debug_counters_phys;
+
+#ifdef CONFIG_SH_SLEEP_LOG
+int64_t sh_get_pm_stats_suspend(void);
+int64_t sh_get_pm_stats_idle(void);
+#endif /* CONFIG_SH_SLEEP_LOG */
+
 #endif  /* __ARCH_ARM_MACH_MSM_PM_H */

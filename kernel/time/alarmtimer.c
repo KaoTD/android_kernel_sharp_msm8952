@@ -25,8 +25,26 @@
 #include <linux/posix-timers.h>
 #include <linux/workqueue.h>
 #include <linux/freezer.h>
-#include "lpm-levels.h"
 #include <linux/workqueue.h>
+
+#ifdef CONFIG_MSM_PM
+#include "lpm-levels.h"
+#endif
+
+#ifdef CONFIG_SH_SLEEP_LOG
+#include <sharp/sh_sleeplog.h>
+#endif /* CONFIG_SH_SLEEP_LOG */
+
+#ifdef CONFIG_SHSYS_CUST_DEBUG
+#include <linux/module.h>
+enum {
+   SH_DEBUG_ALARM_TRIGGERED = 1U << 0,
+};
+static int sh_debug_mask = 0;
+module_param_named(
+   sh_debug_mask, sh_debug_mask, int, S_IRUGO | S_IWUSR | S_IWGRP
+);
+#endif /* CONFIG_SHSYS_CUST_DEBUG */
 
 /**
  * struct alarm_base - Alarm timer bases
@@ -321,8 +339,28 @@ static enum hrtimer_restart alarmtimer_fired(struct hrtimer *timer)
 	alarmtimer_dequeue(base, alarm);
 	spin_unlock_irqrestore(&base->lock, flags);
 
+#if (defined(CONFIG_SHSYS_CUST_DEBUG)||defined(CONFIG_SH_SLEEP_LOG))
+	if (alarm->function){
+#ifdef CONFIG_SH_SLEEP_LOG
+#ifdef CONFIG_ARM64
+		sh_count_mark_alarm(alarm->type, (int64_t)alarm->function);
+#endif /* CONFIG_ARM64 */
+#ifdef CONFIG_ARM
+		sh_count_mark_alarm(alarm->type, (int)alarm->function);
+#endif /* CONFIG_ARM */
+#endif /* CONFIG_SH_SLEEP_LOG */
+#ifdef CONFIG_SHSYS_CUST_DEBUG
+		if(sh_debug_mask == SH_DEBUG_ALARM_TRIGGERED){
+			pr_info("call alarm, type %d, func %pF \n",
+				alarm->type, alarm->function);
+		}
+#endif /* CONFIG_SHSYS_CUST_DEBUG */
+		restart = alarm->function(alarm, base->gettime());
+	}
+#else /*CONFIG_SHSYS_CUST_DEBUG || CONFIG_SH_SLEEP_LOG */
 	if (alarm->function)
 		restart = alarm->function(alarm, base->gettime());
+#endif /*CONFIG_SHSYS_CUST || CONFIG_SH_SLEEP_LOG */
 
 	spin_lock_irqsave(&base->lock, flags);
 	if (restart != ALARMTIMER_NORESTART) {

@@ -43,9 +43,25 @@ struct mmc_ioc_cmd {
 	/* DAT buffer */
 	__u64 data_ptr;
 };
+
+#ifdef CONFIG_FFU_EMMC_CUST_SH
+#define D_SHNVM_FFU_ENABLE
+
+struct mmc_ioc_ffu {
+	unsigned char version[8];
+	unsigned int sector;
+	unsigned int __pad;
+	unsigned char* data_ptr;
+};
+#endif /* CONFIG_FFU_EMMC_CUST_SH */
+
 #define mmc_ioc_cmd_set_data(ic, ptr) ic.data_ptr = (__u64)(unsigned long) ptr
 
 #define MMC_IOC_CMD _IOWR(MMC_BLOCK_MAJOR, 0, struct mmc_ioc_cmd)
+
+#ifdef CONFIG_FFU_EMMC_CUST_SH
+#define MMC_IOC_FFU _IOW(MMC_BLOCK_MAJOR, 99, struct mmc_ioc_ffu)
+#endif /* CONFIG_FFU_EMMC_CUST_SH */
 
 /**
  * There are four request types that are applicable for rpmb accesses- two

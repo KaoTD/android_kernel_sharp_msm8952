@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2017 The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2015, 2017 The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -54,6 +54,8 @@
 	pr_debug(DRV_NAME " %s:%d " fmt, __func__, __LINE__, ## args)
 #define IPAERR(fmt, args...) \
 	pr_err(DRV_NAME " %s:%d " fmt, __func__, __LINE__, ## args)
+#define IPAERR_RL(fmt, args...) \
+	pr_err_ratelimited(DRV_NAME " %s:%d " fmt, __func__, __LINE__, ## args)
 
 #define WLAN_AMPDU_TX_EP 15
 #define WLAN_PROD_TX_EP  19
@@ -1081,10 +1083,12 @@ struct ipa_uc_wdi_ctx {
  * @dec_clients: true if need to decrease active clients count
  * @eot_activity: represent EOT interrupt activity to determine to reset
  *  the inactivity timer
+ * @sps_pm_lock: Lock to protect the sps_pm functionality.
  */
 struct ipa_sps_pm {
 	atomic_t dec_clients;
 	atomic_t eot_activity;
+	struct mutex sps_pm_lock;
 };
 
 /**

@@ -273,7 +273,6 @@ static inline void txopt_put(struct ipv6_txoptions *opt)
 		kfree_rcu(opt, rcu);
 }
 
-
 static inline void fl6_sock_release(struct ip6_flowlabel *fl)
 {
 	if (fl)

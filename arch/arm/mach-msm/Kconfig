@@ -385,6 +385,55 @@ config ARCH_MSM8226
 	select PINCTRL_MSM_TLMM
 	select ENABLE_VMALLOC_SAVINGS
 	select MSM_IRQ
+
+config ARCH_TRISH
+	depends on ARCH_MSM8916
+	bool "SHARP TRISH"
+	help
+	  Support for Sharp trish
+
+config ARCH_DECKARD_AL35
+	depends on ARCH_MSM8916
+	bool "SHARP AL35"
+	help
+	  Support for Sharp al35
+
+config ARCH_DECKARD_AL37
+	depends on ARCH_MSM8916
+	bool "SHARP AL37"
+	help
+	  Support for Sharp al37
+
+config ARCH_PA35
+	depends on ARCH_MSM8916
+	bool "SHARP PA35"
+	help
+	  Support for Sharp pa35
+
+config ARCH_PA37
+	depends on ARCH_MSM8916
+	bool "SHARP PA37"
+	help
+	  Support for Sharp pa37
+
+config ARCH_PA39
+	depends on ARCH_MSM8916
+	bool "SHARP PA39"
+	help
+	  Support for Sharp pa39
+
+config ARCH_PE46
+	depends on ARCH_MSM8916
+	bool "SHARP PE46"
+	help
+	  Support for Sharp pe46
+
+config ARCH_DECKARD_AL50
+	depends on ARCH_MSM8916
+	bool "SHARP AL50"
+	help
+	  Support for Sharp al50
+
 endmenu
 
 config MSM_KRAIT_TBB_ABORT_HANDLER

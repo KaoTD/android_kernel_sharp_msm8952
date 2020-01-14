@@ -113,6 +113,7 @@ EXPORT_SYMBOL_GPL(ehci_cf_port_reset_rwsem);
 #define HUB_DEBOUNCE_STEP	  25
 #define HUB_DEBOUNCE_STABLE	 100
 
+static void hub_release(struct kref *kref);
 static int usb_reset_and_verify_device(struct usb_device *udev);
 
 static inline char *portspeed(struct usb_hub *hub, int portstatus)
@@ -1001,6 +1002,46 @@ int usb_remove_device(struct usb_device *udev)
 	return 0;
 }
 
+#ifdef CONFIG_USB_MSM_OTG_SH_CUST
+enum {
+	D_HUB_PORT_STAT_NOCONNECT = 0,
+	D_HUB_PORT_STAT_ENUM_ERR,
+	D_HUB_PORT_STAT_ENUM_DONE
+};
+
+static void hub_port_status_notify(struct usb_hub *hub, int port1, int err)
+{
+	char buf[10];
+	char *uevent_envp[3];
+
+	if (!hub || !(hub->hdev))
+		return;
+
+	memset(buf, 0x00, sizeof(buf));
+	snprintf(buf, sizeof(buf)-1, "PORT=%d", port1);
+	uevent_envp[0] = buf;
+
+	switch (err) {
+	case D_HUB_PORT_STAT_NOCONNECT:
+		uevent_envp[1] = "STAT=NOCONNECT";
+		break;
+	case D_HUB_PORT_STAT_ENUM_ERR:
+		uevent_envp[1] = "STAT=ENUM_ERR";
+		break;
+	case D_HUB_PORT_STAT_ENUM_DONE:
+		uevent_envp[1] = "STAT=ENUM_DONE";
+		break;
+	default:
+		uevent_envp[1] = "STAT=OTHER_ERR";
+		break;
+	}
+	uevent_envp[2] = NULL;
+
+	dev_info(hub->intfdev, "sent hub status %s %s\n",uevent_envp[0], uevent_envp[1]);
+	kobject_uevent_env(&hub->hdev->dev. kobj, KOBJ_CHANGE, uevent_envp);
+}
+#endif /* CONFIG_USB_MSM_OTG_SH_CUST */
+
 enum hub_activation_type {
 	HUB_INIT, HUB_INIT2, HUB_INIT3,		/* INITs must come first */
 	HUB_POST_RESET, HUB_RESUME, HUB_RESET_RESUME,
@@ -1008,14 +1049,6 @@ enum hub_activation_type {
 
 static void hub_init_func2(struct work_struct *ws);
 static void hub_init_func3(struct work_struct *ws);
-
-static void hub_release(struct kref *kref)
-{
-	struct usb_hub *hub = container_of(kref, struct usb_hub, kref);
-
-	usb_put_intf(to_usb_interface(hub->intfdev));
-	kfree(hub);
-}
 
 static void hub_activate(struct usb_hub *hub, enum hub_activation_type type)
 {
@@ -1029,19 +1062,19 @@ static void hub_activate(struct usb_hub *hub, enum hub_activation_type type)
 
 	/* Continue a partial initialization */
 	if (type == HUB_INIT2 || type == HUB_INIT3) {
-		device_lock(hub->intfdev);
+                device_lock(hub->intfdev);
 
-		/* Was the hub disconnected while we were waiting? */
-		if (hub->disconnected) {
-			device_unlock(hub->intfdev);
-			kref_put(&hub->kref, hub_release);
-			return;
+                /* Was the hub disconnected while we were waiting? */
+                if (hub->disconnected) {
+                        device_unlock(hub->intfdev);
+                        kref_put(&hub->kref, hub_release);
+                        return;
 		}
-		if (type == HUB_INIT2)
-			goto init2;
+                if (type == HUB_INIT2)
+                        goto init2;
 		goto init3;
 	}
-	kref_get(&hub->kref);
+        kref_get(&hub->kref);
 
 	/* The superspeed hub except for root hub has to use Hub Depth
 	 * value as an offset into the route string to locate the bits
@@ -1128,6 +1161,14 @@ static void hub_activate(struct usb_hub *hub, enum hub_activation_type type)
 			dev_dbg(hub->intfdev,
 					"port %d: status %04x change %04x\n",
 					port1, portstatus, portchange);
+
+#ifdef CONFIG_USB_MSM_OTG_SH_CUST
+		if (!(portstatus & USB_PORT_STAT_CONNECTION)) {
+			dev_dbg(hub->intfdev,"%s: not connect status %04x change %04x\n",
+					__func__, portstatus, portchange);
+			hub_port_status_notify(hub,port1,D_HUB_PORT_STAT_NOCONNECT);
+		}
+#endif /* CONFIG_USB_MSM_OTG_SH_CUST */
 
 		/* After anything other than HUB_RESUME (i.e., initialization
 		 * or any sort of reset), every port should be disabled.
@@ -1247,7 +1288,7 @@ static void hub_activate(struct usb_hub *hub, enum hub_activation_type type)
 			PREPARE_DELAYED_WORK(&hub->init_work, hub_init_func3);
 			schedule_delayed_work(&hub->init_work,
 					msecs_to_jiffies(delay));
-			device_unlock(hub->intfdev);
+                        device_unlock(hub->intfdev);
 			return;		/* Continues at init3: below */
 		} else {
 			msleep(delay);
@@ -1390,8 +1431,10 @@ static int hub_configure(struct usb_hub *hub,
 	}
 
 	hdev->maxchild = hub->descriptor->bNbrPorts;
+#ifdef CONFIG_USB_DEBUG_SH_LOG
 	dev_info (hub_dev, "%d port%s detected\n", hdev->maxchild,
 		(hdev->maxchild == 1) ? "" : "s");
+#endif /* CONFIG_USB_DEBUG_SH_LOG */
 
 	hub->ports = kzalloc(hdev->maxchild * sizeof(struct usb_port *),
 			     GFP_KERNEL);
@@ -1639,6 +1682,14 @@ fail_keep_maxchild:
 	return ret;
 }
 
+static void hub_release(struct kref *kref)
+{
+	struct usb_hub *hub = container_of(kref, struct usb_hub, kref);
+
+	usb_put_intf(to_usb_interface(hub->intfdev));
+	kfree(hub);
+}
+
 static unsigned highspeed_hubs;
 
 static void hub_disconnect(struct usb_interface *intf)
@@ -1781,8 +1832,10 @@ descriptor_error:
 	if (!usb_endpoint_is_int_in(endpoint))
 		goto descriptor_error;
 
+#ifdef CONFIG_USB_DEBUG_SH_LOG
 	/* We found a hub */
 	dev_info (&intf->dev, "USB hub found\n");
+#endif /* CONFIG_USB_DEBUG_SH_LOG */
 
 	hub = kzalloc(sizeof(*hub), GFP_KERNEL);
 	if (!hub) {
@@ -2113,8 +2166,10 @@ void usb_disconnect(struct usb_device **pdev)
 	 * this quiesces everything except pending urbs.
 	 */
 	usb_set_device_state(udev, USB_STATE_NOTATTACHED);
+#ifdef CONFIG_USB_DEBUG_SH_LOG
 	dev_info(&udev->dev, "USB disconnect, device number %d\n",
 			udev->devnum);
+#endif /* CONFIG_USB_DEBUG_SH_LOG */
 
 #ifdef CONFIG_USB_OTG
 	if (udev->bus->hnp_support && udev->portnum == udev->bus->otg_port) {
@@ -2182,18 +2237,21 @@ void usb_disconnect(struct usb_device **pdev)
 }
 
 #ifdef CONFIG_USB_ANNOUNCE_NEW_DEVICES
+#ifdef CONFIG_USB_DEBUG_SH_LOG
 static void show_string(struct usb_device *udev, char *id, char *string)
 {
 	if (!string)
 		return;
 	dev_info(&udev->dev, "%s: %s\n", id, string);
 }
+#endif /* CONFIG_USB_DEBUG_SH_LOG */
 
 static void announce_device(struct usb_device *udev)
 {
 	dev_info(&udev->dev, "New USB device found, idVendor=%04x, idProduct=%04x\n",
 		le16_to_cpu(udev->descriptor.idVendor),
 		le16_to_cpu(udev->descriptor.idProduct));
+#ifdef CONFIG_USB_DEBUG_SH_LOG
 	dev_info(&udev->dev,
 		"New USB device strings: Mfr=%d, Product=%d, SerialNumber=%d\n",
 		udev->descriptor.iManufacturer,
@@ -2202,6 +2260,7 @@ static void announce_device(struct usb_device *udev)
 	show_string(udev, "Product", udev->product);
 	show_string(udev, "Manufacturer", udev->manufacturer);
 	show_string(udev, "SerialNumber", udev->serial);
+#endif /* CONFIG_USB_DEBUG_SH_LOG */
 }
 #else
 static inline void announce_device(struct usb_device *udev) { }
@@ -4219,12 +4278,13 @@ hub_port_init (struct usb_hub *hub, struct usb_device *udev, int port1,
 		speed = "variable speed Wireless";
 	else
 		speed = usb_speed_string(udev->speed);
-
+#ifdef CONFIG_USB_DEBUG_SH_LOG
 	if (udev->speed != USB_SPEED_SUPER)
 		dev_info(&udev->dev,
 				"%s %s USB device number %d using %s\n",
 				(udev->config) ? "reset" : "new", speed,
 				devnum, udev->bus->controller->driver->name);
+#endif /* CONFIG_USB_DEBUG_SH_LOG */
 
 	/* Set up TT records, if needed  */
 	if (hdev->tt) {
@@ -4603,6 +4663,14 @@ static void hub_port_connect_change(struct usb_hub *hub, int port1,
 			(portchange & USB_PORT_STAT_C_CONNECTION))
 		clear_bit(port1, hub->removed_bits);
 
+#ifdef CONFIG_USB_MSM_OTG_SH_CUST
+	if (!(portstatus & USB_PORT_STAT_CONNECTION) ||
+			(portchange & USB_PORT_STAT_C_CONNECTION)) {
+		/* notify disconnect */
+		hub_port_status_notify(hub,port1,D_HUB_PORT_STAT_NOCONNECT);
+	}
+#endif /* CONFIG_USB_MSM_OTG_SH_CUST */
+
 	if (portchange & (USB_PORT_STAT_C_CONNECTION |
 				USB_PORT_STAT_C_ENABLE)) {
 		status = hub_port_debounce_be_stable(hub, port1);
@@ -4747,6 +4815,9 @@ static void hub_port_connect_change(struct usb_hub *hub, int port1,
 		if (status)
 			dev_dbg(hub_dev, "%dmA power budget left\n", status);
 
+#ifdef CONFIG_USB_MSM_OTG_SH_CUST
+		hub_port_status_notify(hub, port1,D_HUB_PORT_STAT_ENUM_DONE);
+#endif /* CONFIG_USB_MSM_OTG_SH_CUST */
 		return;
 
 loop_disable:
@@ -4766,7 +4837,10 @@ loop:
 			dev_err(hub_dev, "unable to enumerate USB device on port %d\n",
 					port1);
 	}
- 
+#ifdef CONFIG_USB_MSM_OTG_SH_CUST
+	/* notify unable to enumerate */
+	hub_port_status_notify(hub, port1,D_HUB_PORT_STAT_ENUM_ERR);
+#endif /* CONFIG_USB_MSM_OTG_SH_CUST */
 done:
 	hub_port_disable(hub, port1, 1);
 	if (hcd->driver->relinquish_port && !hub->hdev->parent)

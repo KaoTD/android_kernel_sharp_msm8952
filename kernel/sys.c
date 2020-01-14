@@ -96,6 +96,13 @@
 # define SET_TSC_CTL(a)		(-EINVAL)
 #endif
 
+#ifdef CONFIG_SH_SHUTDOWN_FAILSAFE
+extern struct delayed_work android_shutdown_struct;
+extern struct delayed_work kernel_shutdown_struct;
+extern struct delayed_work android_restart_struct;
+extern struct delayed_work kernel_restart_struct;
+#endif
+
 /*
  * this is where the system-wide overflow UID and GID are defined, for
  * architectures that now have 32-bit UID/GID but didn't in the past
@@ -398,6 +405,10 @@ static void migrate_to_reboot_cpu(void)
  */
 void kernel_restart(char *cmd)
 {
+#ifdef CONFIG_SH_SHUTDOWN_FAILSAFE
+	cancel_delayed_work(&android_restart_struct);
+	schedule_delayed_work(&kernel_restart_struct, msecs_to_jiffies(60000));
+#endif
 	kernel_restart_prepare(cmd);
 	migrate_to_reboot_cpu();
 	syscore_shutdown();
@@ -442,6 +453,10 @@ EXPORT_SYMBOL_GPL(kernel_halt);
  */
 void kernel_power_off(void)
 {
+#ifdef CONFIG_SH_SHUTDOWN_FAILSAFE
+	cancel_delayed_work(&android_shutdown_struct);
+	schedule_delayed_work(&kernel_shutdown_struct, msecs_to_jiffies(60000));
+#endif
 	kernel_shutdown_prepare(SYSTEM_POWER_OFF);
 	if (pm_power_off_prepare)
 		pm_power_off_prepare();

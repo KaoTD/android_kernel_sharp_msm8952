@@ -45,6 +45,10 @@ static const unsigned int tacc_mant[] = {
 	35,	40,	45,	50,	55,	60,	70,	80,
 };
 
+#ifdef CONFIG_HS200_TUNING_EMMC_CUST_SH
+extern bool emmc_force_hs200_tuning;
+#endif /* CONFIG_HS200_TUNING_EMMC_CUST_SH */
+
 #define UNSTUFF_BITS(resp,start,size)					\
 	({								\
 		const int __size = size;				\
@@ -314,6 +318,12 @@ static int mmc_read_ext_csd(struct mmc_card *card, u8 *ext_csd)
 	}
 
 	card->ext_csd.raw_strobe_support = ext_csd[EXT_CSD_STROBE_SUPPORT];
+#ifdef CONFIG_HS400_TUNING_EMMC_CUST_SH
+	if ((card->cid.manfid == CID_MANFID_SAMSUNG) &&
+		!strncmp(card->cid.prod_name, "Q313MB", 6))
+		card->ext_csd.raw_strobe_support = MMC_STROBE_SUPPORT;
+#endif /* CONFIG_HS400_TUNING_EMMC_CUST_SH */
+
 	/*
 	 * The EXT_CSD format is meant to be forward compatible. As long
 	 * as CSD_STRUCTURE does not change, all values for EXT_CSD_REV
@@ -939,9 +949,16 @@ static int mmc_select_hs(struct mmc_card *card, u8 *ext_csd)
 		goto out;
 	}
 
+#ifdef CONFIG_HS_DRIVER_TYPE_EMMC_CUST_SH
+	err = mmc_switch(card, EXT_CSD_CMD_SET_NORMAL,
+				EXT_CSD_HS_TIMING,
+				((CONFIG_HS_DRIVER_TYPE_EMMC_CUST_SH << 4) | 1),
+				card->ext_csd.generic_cmd6_time);
+#else /* CONFIG_HS_DRIVER_TYPE_EMMC_CUST_SH */
 	err = mmc_switch(card, EXT_CSD_CMD_SET_NORMAL,
 				EXT_CSD_HS_TIMING, 1,
 				card->ext_csd.generic_cmd6_time);
+#endif /* CONFIG_HS_DRIVER_TYPE_EMMC_CUST_SH */
 
 	if (err && err != -EBADMSG)
 		goto out;
@@ -1085,8 +1102,15 @@ static int mmc_select_hs200(struct mmc_card *card, u8 *ext_csd)
 	}
 
 	/* switch to HS200 mode if bus width set successfully */
+#ifdef CONFIG_HS200_DRIVER_TYPE_EMMC_CUST_SH
+	err = mmc_switch(card, EXT_CSD_CMD_SET_NORMAL,
+				EXT_CSD_HS_TIMING,
+				((CONFIG_HS200_DRIVER_TYPE_EMMC_CUST_SH << 4) | 2),
+				0);
+#else /* CONFIG_HS200_DRIVER_TYPE_EMMC_CUST_SH */
 	err = mmc_switch(card, EXT_CSD_CMD_SET_NORMAL,
 				EXT_CSD_HS_TIMING, 2, 0);
+#endif /* CONFIG_HS200_DRIVER_TYPE_EMMC_CUST_SH */
 
 	if (err && err != -EBADMSG) {
 		pr_err("%s: HS200 switch failed\n",
@@ -1098,10 +1122,24 @@ static int mmc_select_hs200(struct mmc_card *card, u8 *ext_csd)
 	 * When HS200 activation is performed as part of HS400 selection
 	 * set the timing appropriately
 	 */
+#ifdef CONFIG_HS400_TUNING_EMMC_CUST_SH
+	if (!strncmp( mmc_hostname(card->host), HOST_MMC_MMC,
+		 sizeof(HOST_MMC_MMC)) &&
+		(emmc_force_hs200_tuning == true)) {
+		pr_info(" %s : set timing to HS200\n", __func__);
+		mmc_set_timing(host, MMC_TIMING_MMC_HS200);
+	} else {
+		if (mmc_card_hs400(card))
+			mmc_set_timing(host, MMC_TIMING_MMC_HS400);
+		else
+			mmc_set_timing(host, MMC_TIMING_MMC_HS200);
+	}
+#else /* CONFIG_HS400_TUNING_EMMC_CUST_SH */
 	if (mmc_card_hs400(card))
 		mmc_set_timing(host, MMC_TIMING_MMC_HS400);
 	else
 		mmc_set_timing(host, MMC_TIMING_MMC_HS200);
+#endif /* CONFIG_HS400_TUNING_EMMC_CUST_SH */
 
 	mmc_set_clock(host, MMC_HS200_MAX_DTR);
 
@@ -1114,6 +1152,10 @@ static int mmc_select_hs200(struct mmc_card *card, u8 *ext_csd)
 	if (err) {
 		pr_warning("%s: tuning execution failed\n",
 			   mmc_hostname(host));
+#ifdef CONFIG_HS200_TUNING_EMMC_CUST_SH
+		mmc_set_timing(card->host, MMC_TIMING_LEGACY);
+		mmc_set_clock(card->host, MMC_HIGH_26_MAX_DTR);
+#endif /* CONFIG_HS200_TUNING_EMMC_CUST_SH */
 		goto out;
 	}
 	mmc_card_set_hs200(card);
@@ -1174,10 +1216,17 @@ static int mmc_select_hs400_strobe(struct mmc_card *card, u8 *ext_csd)
 		goto err;
 	}
 
+#ifdef CONFIG_HS400_DRIVER_TYPE_EMMC_CUST_SH
+	err = mmc_switch(card, EXT_CSD_CMD_SET_NORMAL,
+				EXT_CSD_HS_TIMING,
+				((CONFIG_HS400_DRIVER_TYPE_EMMC_CUST_SH << 4) | 0x3),
+				card->ext_csd.generic_cmd6_time);
+#else /* CONFIG_HS400_DRIVER_TYPE_EMMC_CUST_SH */
 	err = mmc_switch(card, EXT_CSD_CMD_SET_NORMAL,
 			   EXT_CSD_HS_TIMING,
 			   0x3,
 			   card->ext_csd.generic_cmd6_time);
+#endif /* CONFIG_HS400_DRIVER_TYPE_EMMC_CUST_SH */
 	if (err) {
 		pr_warn("%s: switch to hs400 failed, err:%d\n",
 			 mmc_hostname(host), err);
@@ -1280,8 +1329,15 @@ static int mmc_select_hs400(struct mmc_card *card, u8 *ext_csd)
 	}
 
 	/* Switch to HS400 mode if bus width set successfully */
+#ifdef CONFIG_HS400_DRIVER_TYPE_EMMC_CUST_SH
+	err = mmc_switch(card, EXT_CSD_CMD_SET_NORMAL,
+				 EXT_CSD_HS_TIMING,
+				((CONFIG_HS400_DRIVER_TYPE_EMMC_CUST_SH << 4) | 3),
+				 0);
+#else /* CONFIG_HS400_DRIVER_TYPE_EMMC_CUST_SH */
 	err = mmc_switch(card, EXT_CSD_CMD_SET_NORMAL,
 				 EXT_CSD_HS_TIMING, 3, 0);
+#endif /* CONFIG_HS400_DRIVER_TYPE_EMMC_CUST_SH */
 	if (err && err != -EBADMSG) {
 		pr_err("%s: Setting HS_TIMING to HS400 failed (err:%d)\n",
 			mmc_hostname(host), err);
@@ -1650,7 +1706,11 @@ reinit:
 		 */
 
 		err = mmc_get_ext_csd(card, &ext_csd);
+#ifdef CONFIG_MMC_BUG_FIX_CUST_SH
+		if (err || ext_csd == NULL) {
+#else /* CONFIG_MMC_BUG_FIX_CUST_SH */
 		if (err) {
+#endif /* CONFIG_MMC_BUG_FIX_CUST_SH */
 			pr_err("%s: %s: mmc_get_ext_csd() fails %d\n",
 					mmc_hostname(host), __func__, err);
 			goto free_card;
@@ -1756,6 +1816,10 @@ reinit:
 	/*
 	 * Activate highest bus speed mode supported by both host and card.
 	 */
+#ifdef CONFIG_HS200_TUNING_EMMC_CUST_SH
+	if (!strncmp(mmc_hostname(card->host), HOST_MMC_MMC, sizeof(HOST_MMC_MMC)))
+		emmc_force_hs200_tuning = true;
+#endif /* CONFIG_HS200_TUNING_EMMC_CUST_SH */
 	err = mmc_select_bus_speed(card, ext_csd);
 	if (err) {
 		pr_err("%s: %s: mmc_select_bus_speed() fails %d\n",
@@ -1876,6 +1940,29 @@ reinit:
 				card->bkops_info.delay_ms =
 					card->bkops_info.host_delay_ms;
 		}
+	}
+
+	/*
+	 * Start auto bkops, if supported.
+	 *
+	 * Note: This leaves the possibility of having both manual and
+	 * auto bkops running in parallel. The runtime implementation
+	 * will allow this, but ignore bkops exceptions on the premises
+	 * that auto bkops will eventually kick in and the device will
+	 * handle bkops without START_BKOPS from the host.
+	 */
+	if (mmc_card_support_auto_bkops(card)) {
+		/*
+		 * Ignore the return value of setting auto bkops.
+		 * If it failed, will run in backward compatible mode.
+		 */
+		err = mmc_set_auto_bkops(card, true);
+		if (err)
+			pr_err("%s: %s: Failed to enable auto-bkops: err: %d\n",
+			       mmc_hostname(card->host), __func__, err);
+		else
+			printk_once("%s: %s: Enabled auto-bkops on device\n",
+				    mmc_hostname(card->host), __func__);
 	}
 
 	if (card->ext_csd.cmdq_support && (card->host->caps2 &

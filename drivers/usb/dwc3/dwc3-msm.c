@@ -708,14 +708,14 @@ static int dwc3_msm_ep_queue(struct usb_ep *ep,
 
 	if (!dep->endpoint.desc) {
 		dev_err(mdwc->dev,
-			"%s: trying to queue request %p to disabled ep %s\n",
+			"%s: trying to queue request %pK to disabled ep %s\n",
 			__func__, request, ep->name);
 		return -EPERM;
 	}
 
 	if (dep->number == 0 || dep->number == 1) {
 		dev_err(mdwc->dev,
-			"%s: trying to queue dbm request %p to control ep %s\n",
+			"%s: trying to queue dbm request %pK to control ep %s\n",
 			__func__, request, ep->name);
 		return -EPERM;
 	}
@@ -724,7 +724,7 @@ static int dwc3_msm_ep_queue(struct usb_ep *ep,
 	if (dep->busy_slot != dep->free_slot || !list_empty(&dep->request_list)
 					 || !list_empty(&dep->req_queued)) {
 		dev_err(mdwc->dev,
-			"%s: trying to queue dbm request %p tp ep %s\n",
+			"%s: trying to queue dbm request %pK tp ep %s\n",
 			__func__, request, ep->name);
 		return -EPERM;
 	} else {
@@ -769,7 +769,7 @@ static int dwc3_msm_ep_queue(struct usb_ep *ep,
 		return ret;
 	}
 
-	dev_vdbg(dwc->dev, "%s: queing request %p to ep %s length %d\n",
+	dev_vdbg(dwc->dev, "%s: queing request %pK to ep %s length %d\n",
 			__func__, request, ep->name, request->length);
 	size = dwc3_msm_read_reg(mdwc->base, DWC3_GEVNTSIZ(0));
 	dbm_event_buffer_config(mdwc->dbm,
@@ -986,7 +986,7 @@ EXPORT_SYMBOL(msm_dwc3_restart_usb_session);
  */
 int msm_register_usb_ext_notification(struct usb_ext_notification *info)
 {
-	pr_debug("%s usb_ext: %p\n", __func__, info);
+	pr_debug("%s usb_ext: %pK\n", __func__, info);
 
 	if (info) {
 		if (usb_ext) {
@@ -2291,10 +2291,8 @@ static int dwc3_msm_power_get_property_usb(struct power_supply *psy,
 				  enum power_supply_property psp,
 				  union power_supply_propval *val)
 {
-	int res = 0;
 	struct dwc3_msm *mdwc = container_of(psy, struct dwc3_msm,
 								usb_psy);
-
 	switch (psp) {
 	case POWER_SUPPLY_PROP_SCOPE:
 		val->intval = mdwc->scope;
@@ -2315,9 +2313,7 @@ static int dwc3_msm_power_get_property_usb(struct power_supply *psy,
 		val->intval = psy->type;
 		break;
 	case POWER_SUPPLY_PROP_VOLTAGE_NOW:
-		res = get_prop_usbin_voltage_now(mdwc);
-		if (res >= 0)
-			val->intval = res;
+		val->intval = get_prop_usbin_voltage_now(mdwc);
 		break;
 	case POWER_SUPPLY_PROP_HEALTH:
 		val->intval = mdwc->health_status;
@@ -2328,7 +2324,7 @@ static int dwc3_msm_power_get_property_usb(struct power_supply *psy,
 	default:
 		return -EINVAL;
 	}
-	return res;
+	return 0;
 }
 
 static int dwc3_msm_power_set_property_usb(struct power_supply *psy,
@@ -2483,11 +2479,11 @@ static char *dwc3_msm_pm_power_supplied_to[] = {
 static enum power_supply_property dwc3_msm_pm_power_props_usb[] = {
 	POWER_SUPPLY_PROP_PRESENT,
 	POWER_SUPPLY_PROP_ONLINE,
-//	POWER_SUPPLY_PROP_VOLTAGE_MAX,
+	POWER_SUPPLY_PROP_VOLTAGE_MAX,
 	POWER_SUPPLY_PROP_CURRENT_MAX,
 	POWER_SUPPLY_PROP_TYPE,
 	POWER_SUPPLY_PROP_SCOPE,
-//	POWER_SUPPLY_PROP_VOLTAGE_NOW,
+	POWER_SUPPLY_PROP_VOLTAGE_NOW,
 	POWER_SUPPLY_PROP_HEALTH,
 	POWER_SUPPLY_PROP_USB_OTG,
 };

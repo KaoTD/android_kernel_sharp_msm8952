@@ -1,4 +1,4 @@
-/* Copyright (c) 2014-2015, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2014-2017, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -45,10 +45,15 @@
 #include "msm8916-wcd-irq.h"
 #include "msm8x16_wcd_registers.h"
 
+#ifdef CONFIG_SH_AUDIO_DRIVER /* 22-035 */
+#include <sharp/shub_driver.h>
+#endif /* CONFIG_SH_AUDIO_DRIVER */ /* 22-035 */
+
 #define MSM8X16_WCD_RATES (SNDRV_PCM_RATE_8000 | SNDRV_PCM_RATE_16000 |\
 			SNDRV_PCM_RATE_32000 | SNDRV_PCM_RATE_48000)
 #define MSM8X16_WCD_FORMATS (SNDRV_PCM_FMTBIT_S16_LE |\
-		SNDRV_PCM_FMTBIT_S24_LE)
+		SNDRV_PCM_FMTBIT_S24_LE |\
+		SNDRV_PCM_FMTBIT_S24_3LE)
 
 #define NUM_INTERPOLATORS	3
 #define BITS_PER_REG		8
@@ -112,6 +117,18 @@ enum {
 #define VOLTAGE_CONVERTER(value, min_value, step_size)\
 	((value - min_value)/step_size);
 
+#ifdef CONFIG_SH_AUDIO_DRIVER /* 22-005 */
+#define DIAG_DEBUGMODE_MSK	0x01
+#define DIAG_DEBUGMODE_ON	0x01
+#define DIAG_DEBUGMODE_OFF	0x00
+#define DIAG_MICBIAS_MSK	0x02
+#define DIAG_MICBIAS_ON		0x02
+#define DIAG_MICBIAS_OFF	0x00
+#define DIAG_CODECSTOP_MSK	0x04
+#define DIAG_CODECSTOP_ON	0x04
+#define DIAG_CODECSTOP_OFF	0x00
+#endif /* CONFIG_SH_AUDIO_DRIVER */ /* 22-005 */
+
 enum {
 	AIF1_PB = 0,
 	AIF1_CAP,
@@ -137,13 +154,6 @@ static struct snd_soc_dai_driver msm8x16_wcd_i2s_dai[];
 
 #define MSM8X16_WCD_RELEASE_LOCK(x) mutex_unlock(&x);
 
-#if defined(CONFIG_SPEAKER_EXT_PA)
-static int external_spk_control = 1;
-#endif
-
-#if defined(CONFIG_SND_SOC_TPA6130A2)
-static int external_hph_control = 0;
-#endif
 
 /* Codec supports 2 IIR filters */
 enum {
@@ -174,6 +184,58 @@ static struct hpf_work tx_hpf_work[NUM_DECIMATORS];
 static char on_demand_supply_name[][MAX_ON_DEMAND_SUPPLY_NAME_LENGTH] = {
 	"cdc-vdd-mic-bias",
 };
+
+#ifdef CONFIG_SH_AUDIO_DRIVER /* 22-005 */
+struct msm8x16_wcd_priv *diag_codec_switch;
+static int bias_mode_for_testmode = 0;
+static bool irq_mode_for_testmode  = true;
+
+int tomtom_codec_get_bias_mode(void)
+{
+	return bias_mode_for_testmode;
+}
+EXPORT_SYMBOL_GPL(tomtom_codec_get_bias_mode);
+
+void diag_codec_set_bias_mode(int mode)
+{
+	struct wcd_mbhc mbhc = diag_codec_switch->mbhc;
+	bias_mode_for_testmode = mode;
+
+	if(irq_mode_for_testmode){
+		if((bias_mode_for_testmode & DIAG_CODECSTOP_MSK) == DIAG_CODECSTOP_ON ){
+			wcd9xxx_spmi_disable_irq(mbhc.intr_ids->mbhc_sw_intr);
+			wcd9xxx_spmi_disable_irq(mbhc.intr_ids->mbhc_hs_rem_intr);
+			wcd9xxx_spmi_disable_irq(mbhc.intr_ids->mbhc_hs_ins_intr);
+			irq_mode_for_testmode = false;
+		}
+	}else{
+		 if((bias_mode_for_testmode & DIAG_CODECSTOP_MSK) == DIAG_CODECSTOP_OFF){
+			wcd9xxx_spmi_enable_irq(mbhc.intr_ids->mbhc_sw_intr);
+			wcd9xxx_spmi_enable_irq(mbhc.intr_ids->mbhc_hs_rem_intr);
+			wcd9xxx_spmi_enable_irq(mbhc.intr_ids->mbhc_hs_ins_intr);
+			irq_mode_for_testmode = true;
+		}
+	}
+	return;
+}
+EXPORT_SYMBOL_GPL(diag_codec_set_bias_mode);
+
+int msm_headset_hp_state(void)
+{
+	struct wcd_mbhc mbhc = diag_codec_switch->mbhc;
+
+	return mbhc.headset_jack.status;
+}
+EXPORT_SYMBOL_GPL(msm_headset_hp_state);
+
+int msm_headset_bu_state(void)
+{
+	struct wcd_mbhc mbhc = diag_codec_switch->mbhc;
+
+	return mbhc.button_jack.status;
+}
+EXPORT_SYMBOL_GPL(msm_headset_bu_state);
+#endif /* CONFIG_SH_AUDIO_DRIVER */ /* 22-005 */
 
 static unsigned long rx_digital_gain_reg[] = {
 	MSM8X16_WCD_A_CDC_RX1_VOL_CTL_B2_CTL,
@@ -307,12 +369,6 @@ static void msm8x16_skip_imped_detect(struct snd_soc_codec *codec);
 static bool msm8x16_wcd_use_mb(struct snd_soc_codec *codec);
 
 struct msm8x16_wcd_spmi msm8x16_wcd_modules[MAX_MSM8X16_WCD_DEVICE];
-#if defined(CONFIG_SPEAKER_EXT_PA)
-int msm8x16_spk_ext_pa_ctrl(struct msm8916_asoc_mach_data *pdatadata, bool value);
-#endif
-#if defined(CONFIG_SND_SOC_TPA6130A2)
-extern int tpa6130a2_stereo_enable(struct snd_soc_codec *codec, int enable);
-#endif
 
 static void *adsp_state_notifier;
 
@@ -1161,10 +1217,32 @@ static int __msm8x16_wcd_reg_read(struct snd_soc_codec *codec,
 	else if (MSM8X16_WCD_IS_DIGITAL_REG(reg)) {
 		mutex_lock(&pdata->cdc_mclk_mutex);
 		if (atomic_read(&pdata->mclk_enabled) == false) {
-			pdata->digital_cdc_clk.clk_val = pdata->mclk_freq;
-			ret = afe_set_digital_codec_core_clock(
+			switch (q6core_get_avs_version()) {
+			case Q6_SUBSYS_AVS2_6:
+			{
+				pdata->digital_cdc_clk.clk_val =
+						pdata->mclk_freq;
+				ret = afe_set_digital_codec_core_clock(
 					AFE_PORT_ID_PRIMARY_MI2S_RX,
 					&pdata->digital_cdc_clk);
+					break;
+			}
+			case Q6_SUBSYS_AVS2_7:
+			{
+				pdata->digital_cdc_core_clk.enable = 1;
+				ret = afe_set_lpass_clock_v2(
+					AFE_PORT_ID_PRIMARY_MI2S_RX,
+					&pdata->digital_cdc_core_clk);
+					break;
+			}
+			case Q6_SUBSYS_INVALID:
+			default:
+			{
+				pr_err("%s: unknown dsp image\n",
+							__func__);
+				break;
+			}
+			}
 			if (ret < 0) {
 				pr_err("failed to enable the MCLK\n");
 				goto err;
@@ -1213,9 +1291,26 @@ static int __msm8x16_wcd_reg_write(struct snd_soc_codec *codec,
 		if (atomic_read(&pdata->mclk_enabled) == false) {
 			pr_debug("enable MCLK for AHB write %s:\n", __func__);
 			pdata->digital_cdc_clk.clk_val = pdata->mclk_freq;
-			ret = afe_set_digital_codec_core_clock(
+			switch (q6core_get_avs_version()) {
+			case Q6_SUBSYS_AVS2_6:
+				pdata->digital_cdc_clk.clk_val =
+					pdata->mclk_freq;
+				ret = afe_set_digital_codec_core_clock(
 					AFE_PORT_ID_PRIMARY_MI2S_RX,
 					&pdata->digital_cdc_clk);
+				break;
+			case Q6_SUBSYS_AVS2_7:
+				pdata->digital_cdc_core_clk.enable = 1;
+				ret = afe_set_lpass_clock_v2(
+					AFE_PORT_ID_PRIMARY_MI2S_RX,
+					&pdata->digital_cdc_core_clk);
+				break;
+			case Q6_SUBSYS_INVALID:
+			default:
+				pr_err("%s: enable clk failed\n",
+							__func__);
+				break;
+			}
 			if (ret < 0) {
 				pr_err("failed to enable the MCLK\n");
 				ret = 0;
@@ -1925,6 +2020,13 @@ static int msm8x16_wcd_codec_enable_charge_pump(struct snd_soc_dapm_widget *w,
 					__func__, msm8x16_wcd->boost_option);
 				msm8x16_wcd_boost_mode_sequence(codec, EAR_PMD);
 			}
+			/*
+			 * Reset pa select bit from ear to hph after ear pa
+			 * is disabled and HPH DAC disable to reduce ear
+			 * turn off pop and avoid HPH pop in concurrency
+			 */
+			snd_soc_update_bits(codec,
+				MSM8X16_WCD_A_ANALOG_RX_EAR_CTL, 0x80, 0x00);
 		} else {
 			snd_soc_update_bits(codec,
 					MSM8X16_WCD_A_DIGITAL_CDC_DIG_CLK_CTL,
@@ -2198,65 +2300,6 @@ static int msm8x16_wcd_ext_spk_boost_set(struct snd_kcontrol *kcontrol,
 		__func__, msm8x16_wcd->spk_boost_set);
 	return 0;
 }
-#if defined(CONFIG_SPEAKER_EXT_PA)
-static int get_external_spk_pa(struct snd_kcontrol *kcontrol,
-		       struct snd_ctl_elem_value *ucontrol)
-{
-	pr_debug("At %d In (%s),external_spk_control=%d\n",__LINE__, __FUNCTION__,external_spk_control);
-	ucontrol->value.integer.value[0] = external_spk_control;
-	return 0;
-}
-
-static int set_external_spk_pa(struct snd_kcontrol *kcontrol,
-		       struct snd_ctl_elem_value *ucontrol)
-{
-	struct snd_soc_codec *codec = snd_kcontrol_chip(kcontrol);
-
-	struct msm8916_asoc_mach_data *pdata = NULL;
-	pdata = snd_soc_card_get_drvdata(codec->card);
-
-	pr_debug("At %d In (%s),external_spk_control=%d,value.integer.value[0]=%ld\n",__LINE__, __FUNCTION__,
-							external_spk_control,ucontrol->value.integer.value[0]);
-	if (external_spk_control == ucontrol->value.integer.value[0])
-		return 0;
-
-	external_spk_control = ucontrol->value.integer.value[0];
-
-	msm8x16_spk_ext_pa_ctrl(pdata, external_spk_control);
-	return 1;
-}
-#endif
-
-#if defined(CONFIG_SND_SOC_TPA6130A2)
-static int get_external_hph_pa(struct snd_kcontrol *kcontrol,
-		       struct snd_ctl_elem_value *ucontrol)
-{
-	pr_debug("At %d In (%s),external_hph_control=%d\n",__LINE__, __FUNCTION__,external_hph_control);
-	ucontrol->value.integer.value[0] = external_hph_control;
-	return 0;
-}
-
-static int set_external_hph_pa(struct snd_kcontrol *kcontrol,
-		       struct snd_ctl_elem_value *ucontrol)
-{
-	struct snd_soc_codec *codec = snd_kcontrol_chip(kcontrol);
-
-	int ret =0;
-
-	pr_debug("At %d In (%s),external_hph_control=%d,value.integer.value[0]=%ld\n",__LINE__, __FUNCTION__,
-			external_hph_control,ucontrol->value.integer.value[0]);
-	if (external_hph_control == ucontrol->value.integer.value[0])
-		return 0;
-
-	external_hph_control = ucontrol->value.integer.value[0];
-
-	ret = tpa6130a2_stereo_enable(codec, external_hph_control);
-	pr_debug("At %d In (%s),after set tpa6130a2_stereo_enable,external_hph_control=%d, ret=%d\n",
-		__LINE__, __FUNCTION__,external_hph_control,ret);
-	return 1;
-}
-#endif
-
 static int msm8x16_wcd_get_iir_enable_audio_mixer(
 					struct snd_kcontrol *kcontrol,
 					struct snd_ctl_elem_value *ucontrol)
@@ -2484,24 +2527,6 @@ static const struct soc_enum msm8x16_wcd_spk_boost_ctl_enum[] = {
 		SOC_ENUM_SINGLE_EXT(2, msm8x16_wcd_spk_boost_ctrl_text),
 };
 
-#if defined(CONFIG_SPEAKER_EXT_PA)
-static const char * const msm8x16_external_spk_pa_text[] = {
-		"OFF", "ON"};
-
-static const struct soc_enum msm8x16_external_spk_pa_enum[] = {
-		SOC_ENUM_SINGLE_EXT(2, msm8x16_external_spk_pa_text),
-};
-#endif
-
-#if defined(CONFIG_SND_SOC_TPA6130A2)
-static const char * const msm8x16_external_hph_pa_text[] = {
-		"OFF", "ON"};
-
-static const struct soc_enum msm8x16_external_hph_pa_enum[] = {
-		SOC_ENUM_SINGLE_EXT(2, msm8x16_external_hph_pa_text),
-};
-#endif
-
 static const char * const msm8x16_wcd_ext_spk_boost_ctrl_text[] = {
 		"DISABLE", "ENABLE"};
 static const struct soc_enum msm8x16_wcd_ext_spk_boost_ctl_enum[] = {
@@ -2541,16 +2566,6 @@ static const struct snd_kcontrol_new msm8x16_wcd_snd_controls[] = {
 
 	SOC_ENUM_EXT("Speaker Boost", msm8x16_wcd_spk_boost_ctl_enum[0],
 		msm8x16_wcd_spk_boost_get, msm8x16_wcd_spk_boost_set),
-
-#if defined(CONFIG_SPEAKER_EXT_PA)
-	SOC_ENUM_EXT("Speaker PA Open", msm8x16_external_spk_pa_enum[0],
-		get_external_spk_pa, set_external_spk_pa),
-#endif
-
-#if defined(CONFIG_SND_SOC_TPA6130A2)
-	SOC_ENUM_EXT("Headphone PA Open", msm8x16_external_hph_pa_enum[0],
-		get_external_hph_pa, set_external_hph_pa),
-#endif
 
 	SOC_ENUM_EXT("Ext Spk Boost", msm8x16_wcd_ext_spk_boost_ctl_enum[0],
 		msm8x16_wcd_ext_spk_boost_get, msm8x16_wcd_ext_spk_boost_set),
@@ -2597,9 +2612,6 @@ static const struct snd_kcontrol_new msm8x16_wcd_snd_controls[] = {
 	SOC_SINGLE_SX_TLV("IIR2 INP1 Volume",
 			  MSM8X16_WCD_A_CDC_IIR2_GAIN_B1_CTL,
 			0,  -84, 40, digital_gain),
-
-	SOC_SINGLE("MICBIAS CAPLESS Switch",
-			 MSM8X16_WCD_A_ANALOG_MICB_1_EN, 6, 1, 0),
 
 	SOC_ENUM("TX1 HPF cut off", cf_dec1_enum),
 	SOC_ENUM("TX2 HPF cut off", cf_dec2_enum),
@@ -3056,55 +3068,6 @@ static const struct snd_kcontrol_new spkr_mux[] = {
 	SOC_DAPM_ENUM_VIRT("SPK", hph_enum)
 };
 
-#if defined(CONFIG_SPEAKER_EXT_PA)
- int msm8x16_spk_ext_pa_ctrl(struct msm8916_asoc_mach_data *pdatadata, bool value)
-{
-	struct msm8916_asoc_mach_data *pdata = pdatadata;
-	bool on_off = value;
-	int ret = 0;
-
-	if (gpio_is_valid(pdata->spk_ext_pa_gpio_lc))
-	{
-		if (on_off)
-		{
-#if  defined(CONFIG_SPEAKER_EXT_PA_AW8738)
-			gpio_set_value(pdata->spk_ext_pa_gpio_lc, false);
-			mdelay(3);
-			gpio_set_value(pdata->spk_ext_pa_gpio_lc, true);
-			udelay(2);
-			gpio_set_value(pdata->spk_ext_pa_gpio_lc, false);
-			udelay(2);
-			gpio_set_value(pdata->spk_ext_pa_gpio_lc, true);
-			udelay(2);
-			gpio_set_value(pdata->spk_ext_pa_gpio_lc, false);
-			udelay(2);
-			gpio_set_value(pdata->spk_ext_pa_gpio_lc, true);
-			udelay(2);
-			gpio_set_value(pdata->spk_ext_pa_gpio_lc, false);
-			udelay(2);
-			gpio_set_value(pdata->spk_ext_pa_gpio_lc, true);
-			udelay(2);
-			gpio_set_value(pdata->spk_ext_pa_gpio_lc, false);
-			udelay(2);
-
-#endif
-			gpio_set_value(pdata->spk_ext_pa_gpio_lc, true);
-			msleep(3);
-		}
-		else {
-			gpio_set_value(pdata->spk_ext_pa_gpio_lc, false);
-			}
-	}
-	else
-	{
-		pr_debug("%s, error\n", __func__);
-		ret = -EINVAL;
-	}
-
-	return ret;
-}
-#endif
-
 static void msm8x16_wcd_codec_enable_adc_block(struct snd_soc_codec *codec,
 					 int enable)
 {
@@ -3215,11 +3178,6 @@ static int msm8x16_wcd_codec_enable_spk_pa(struct snd_soc_dapm_widget *w,
 	struct snd_soc_codec *codec = w->codec;
 	struct msm8x16_wcd_priv *msm8x16_wcd = snd_soc_codec_get_drvdata(codec);
 
-#if defined(CONFIG_SPEAKER_EXT_PA)
-	struct msm8916_asoc_mach_data *pdata = NULL;
-	pdata = snd_soc_card_get_drvdata(codec->card);
-#endif
-
 	dev_dbg(w->codec->dev, "%s %d %s\n", __func__, event, w->name);
 	switch (event) {
 	case SND_SOC_DAPM_PRE_PMU:
@@ -3255,6 +3213,10 @@ static int msm8x16_wcd_codec_enable_spk_pa(struct snd_soc_dapm_widget *w,
 				MSM8X16_WCD_A_ANALOG_RX_EAR_CTL, 0x01, 0x01);
 		break;
 	case SND_SOC_DAPM_POST_PMU:
+#ifdef CONFIG_SH_AUDIO_DRIVER /* 22-035 */
+		dev_dbg(w->codec->dev, "%s Stop pedometer function\n", __func__);
+		shub_api_stop_pedometer_func(SHUB_STOP_PED_TYPE_SPE);
+#endif /* CONFIG_SH_AUDIO_DRIVER */ /* 22-035 */
 		usleep_range(CODEC_DELAY_1_MS, CODEC_DELAY_1_1_MS);
 		switch (msm8x16_wcd->boost_option) {
 		case BOOST_SWITCH:
@@ -3285,19 +3247,15 @@ static int msm8x16_wcd_codec_enable_spk_pa(struct snd_soc_dapm_widget *w,
 		snd_soc_update_bits(codec,
 			MSM8X16_WCD_A_CDC_RX3_B6_CTL, 0x01, 0x00);
 		snd_soc_update_bits(codec, w->reg, 0x80, 0x80);
-#if defined(CONFIG_SPEAKER_EXT_PA)
-		schedule_delayed_work(&pdata->pa_gpio_work, msecs_to_jiffies(40));
-#endif
 		break;
 	case SND_SOC_DAPM_PRE_PMD:
-#if defined(CONFIG_SPEAKER_EXT_PA)
-		cancel_delayed_work_sync(&pdata->pa_gpio_work);
-		msm8x16_spk_ext_pa_ctrl(pdata, false);
-		pdata->pa_is_on = 0;
-#endif
 		snd_soc_update_bits(codec,
 			MSM8X16_WCD_A_CDC_RX3_B6_CTL, 0x01, 0x01);
 		msm8x16_wcd->mute_mask |= SPKR_PA_DISABLE;
+#ifdef CONFIG_SH_AUDIO_DRIVER /* 22-035 */
+		dev_dbg(w->codec->dev, "%s Restart pedometer function\n", __func__);
+		shub_api_restart_pedometer_func(SHUB_STOP_PED_TYPE_SPE);
+#endif /* CONFIG_SH_AUDIO_DRIVER */ /* 22-035 */
 		/*
 		 * Add 1 ms sleep for the mute to take effect
 		 */
@@ -3598,7 +3556,7 @@ static int msm8x16_wcd_codec_enable_micbias(struct snd_soc_dapm_widget *w,
 			snd_soc_update_bits(codec, micb_int_reg, 0x08, 0x08);
 			msm8x16_notifier_call(codec,
 					WCD_EVENT_POST_MICBIAS_2_ON);
-		} else if (strnstr(w->name, internal3_text, 30)) {
+		} else if (strnstr(w->name, internal3_text, strlen(w->name))) {
 			snd_soc_update_bits(codec, micb_int_reg, 0x01, 0x01);
 		} else if (strnstr(w->name, external2_text, strlen(w->name))) {
 			msm8x16_notifier_call(codec,
@@ -3611,7 +3569,7 @@ static int msm8x16_wcd_codec_enable_micbias(struct snd_soc_dapm_widget *w,
 		} else if (strnstr(w->name, internal2_text, strlen(w->name))) {
 			msm8x16_notifier_call(codec,
 					WCD_EVENT_POST_MICBIAS_2_OFF);
-		} else if (strnstr(w->name, internal3_text, 30)) {
+		} else if (strnstr(w->name, internal3_text, strlen(w->name))) {
 			snd_soc_update_bits(codec, micb_int_reg, 0x2, 0x0);
 		} else if (strnstr(w->name, external2_text, strlen(w->name))) {
 			/*
@@ -4164,17 +4122,12 @@ static int msm8x16_wcd_hphr_dac_event(struct snd_soc_dapm_widget *w,
 	return 0;
 }
 
-
 static int msm8x16_wcd_hph_pa_event(struct snd_soc_dapm_widget *w,
 			      struct snd_kcontrol *kcontrol, int event)
 {
 	struct snd_soc_codec *codec = w->codec;
 	struct msm8x16_wcd_priv *msm8x16_wcd = snd_soc_codec_get_drvdata(codec);
-#if defined(CONFIG_SND_SOC_TPA6130A2)
-	struct msm8916_asoc_mach_data *pdata = NULL;
-	int ret = 0;
-	pdata = snd_soc_card_get_drvdata(codec->card);
-#endif
+
 	dev_dbg(codec->dev, "%s: %s event = %d\n", __func__, w->name, event);
 
 	switch (event) {
@@ -4190,10 +4143,6 @@ static int msm8x16_wcd_hph_pa_event(struct snd_soc_dapm_widget *w,
 		break;
 
 	case SND_SOC_DAPM_POST_PMU:
-#if defined(CONFIG_SND_SOC_TPA6130A2)
-		pr_debug("At %d In (%s),will enable tpa6130a2,pdata->hph_pa_is_on = %d;\n",__LINE__, __FUNCTION__ ,pdata->hph_pa_is_on);
-		schedule_delayed_work(&pdata->hph_pa_gpio_work, msecs_to_jiffies(5));
-#endif
 		usleep_range(7000, 7100);
 		if (w->shift == 5) {
 			snd_soc_update_bits(codec,
@@ -4209,12 +4158,6 @@ static int msm8x16_wcd_hph_pa_event(struct snd_soc_dapm_widget *w,
 		break;
 
 	case SND_SOC_DAPM_PRE_PMD:
-#if defined(CONFIG_SND_SOC_TPA6130A2)
-		cancel_delayed_work_sync(&pdata->hph_pa_gpio_work);
-		ret = tpa6130a2_stereo_enable(codec, 0);
-		if (ret < 0) pr_debug("At %d In (%s), tpa6130a2_stereo_enable() run fail\n",__LINE__, __FUNCTION__ );
-		pdata->hph_pa_is_on = 0;
-#endif
 		if (w->shift == 5) {
 			snd_soc_update_bits(codec,
 				MSM8X16_WCD_A_CDC_RX1_B6_CTL, 0x01, 0x01);
@@ -4598,6 +4541,7 @@ static int msm8x16_wcd_hw_params(struct snd_pcm_substream *substream,
 				MSM8X16_WCD_A_CDC_CLK_RX_I2S_CTL, 0x20, 0x20);
 		break;
 	case SNDRV_PCM_FORMAT_S24_LE:
+	case SNDRV_PCM_FORMAT_S24_3LE:
 		snd_soc_update_bits(dai->codec,
 				MSM8X16_WCD_A_CDC_CLK_RX_I2S_CTL, 0x20, 0x00);
 		break;
@@ -4721,17 +4665,12 @@ static int msm8x16_wcd_codec_enable_rx_chain(struct snd_soc_dapm_widget *w,
 
 	switch (event) {
 	case SND_SOC_DAPM_POST_PMU:
-		dev_dbg(w->codec->dev,
-			"%s: PMU:Sleeping 20ms after disabling mute\n",
-			__func__);
+		dev_dbg(w->codec->dev, "%s: [PMU]\n", __func__);
 		break;
 	case SND_SOC_DAPM_POST_PMD:
-		dev_dbg(w->codec->dev,
-			"%s: PMD:Sleeping 20ms after disabling mute\n",
-			__func__);
+		dev_dbg(w->codec->dev, "%s: [PMD]\n", __func__);
 		snd_soc_update_bits(codec, w->reg,
 			    1 << w->shift, 0x00);
-		msleep(20);
 		break;
 	}
 	return 0;
@@ -4807,12 +4746,6 @@ static int msm8x16_wcd_codec_enable_ear_pa(struct snd_soc_dapm_widget *w,
 		snd_soc_update_bits(codec, MSM8X16_WCD_A_ANALOG_RX_EAR_CTL,
 			    0x40, 0x00);
 		usleep_range(7000, 7100);
-		/*
-		 * Reset pa select bit from ear to hph after ear pa
-		 * is disabled to reduce ear turn off pop
-		 */
-		snd_soc_update_bits(codec, MSM8X16_WCD_A_ANALOG_RX_EAR_CTL,
-			    0x80, 0x00);
 		if (get_codec_version(msm8x16_wcd) < CONGA)
 			snd_soc_update_bits(codec,
 			MSM8X16_WCD_A_ANALOG_RX_HPH_CNP_WG_TIME, 0xFF, 0x16);
@@ -5230,9 +5163,12 @@ static void msm8x16_wcd_codec_init_reg(struct snd_soc_codec *codec)
 
 static int msm8x16_wcd_bringup(struct snd_soc_codec *codec)
 {
+	u8 val = 0;
+
 	snd_soc_write(codec,
 		MSM8X16_WCD_A_DIGITAL_SEC_ACCESS,
 		0xA5);
+	val = snd_soc_read(codec, MSM8X16_WCD_A_ANALOG_BOOST_TEST1_1);
 	snd_soc_write(codec, MSM8X16_WCD_A_DIGITAL_PERPH_RESET_CTL4, 0x01);
 	snd_soc_write(codec,
 		MSM8X16_WCD_A_ANALOG_SEC_ACCESS,
@@ -5246,6 +5182,12 @@ static int msm8x16_wcd_bringup(struct snd_soc_codec *codec)
 		MSM8X16_WCD_A_ANALOG_SEC_ACCESS,
 		0xA5);
 	snd_soc_write(codec, MSM8X16_WCD_A_ANALOG_PERPH_RESET_CTL4, 0x00);
+
+	if (val) {
+		pr_debug("%s writing reg = %x val = %x\n", __func__,
+					MSM8X16_WCD_A_ANALOG_BOOST_TEST1_1, val);
+		snd_soc_write(codec, MSM8X16_WCD_A_ANALOG_BOOST_TEST1_1, val);
+	}
 	return 0;
 }
 
@@ -5343,43 +5285,27 @@ static int msm8x16_wcd_device_up(struct snd_soc_codec *codec)
 {
 	struct msm8x16_wcd_priv *msm8x16_wcd_priv =
 		snd_soc_codec_get_drvdata(codec);
-	u32 reg;
 	int ret = 0;
 	dev_dbg(codec->dev, "%s: device up!\n", __func__);
 
 	mutex_lock(&codec->mutex);
 
 	clear_bit(BUS_DOWN, &msm8x16_wcd_priv->status_mask);
-
-	for (reg = 0; reg < ARRAY_SIZE(msm8x16_wcd_reset_reg_defaults);
-			reg++) {
-		if (msm8x16_wcd_reg_readable[reg]) {
-			if (get_codec_version(msm8x16_wcd_priv) != CAJON &&
-					cajon_digital_reg[reg])
-				continue;
-			msm8x16_wcd_write(codec,
-				reg, msm8x16_wcd_reset_reg_defaults[reg]);
-		}
-	}
-
-	if (codec->reg_def_copy) {
-		pr_debug("%s: Update ASOC cache", __func__);
-		kfree(codec->reg_cache);
-		codec->reg_cache = kmemdup(codec->reg_def_copy,
-						codec->reg_size, GFP_KERNEL);
-		if (!codec->reg_cache) {
-			pr_err("%s: Cache update failed!\n", __func__);
-			mutex_unlock(&codec->mutex);
-			return -ENOMEM;
-		}
-	}
-
 	snd_soc_card_change_online_state(codec->card, 1);
 	/* delay is required to make sure sound card state updated */
 	usleep_range(5000, 5100);
 
 	msm8x16_wcd_codec_init_reg(codec);
 	msm8x16_wcd_update_reg_defaults(codec);
+
+	codec->cache_sync = true;
+	snd_soc_cache_sync(codec);
+	codec->cache_sync = false;
+
+	msm8x16_wcd_write(codec, MSM8X16_WCD_A_DIGITAL_INT_EN_SET,
+				MSM8X16_WCD_A_DIGITAL_INT_EN_SET__POR);
+	msm8x16_wcd_write(codec, MSM8X16_WCD_A_DIGITAL_INT_EN_CLR,
+				MSM8X16_WCD_A_DIGITAL_INT_EN_CLR__POR);
 
 	msm8x16_wcd_set_boost_v(codec);
 
@@ -5668,6 +5594,11 @@ static int msm8x16_wcd_codec_probe(struct snd_soc_codec *codec)
 		registered_codec = NULL;
 		return -ENOMEM;
 	}
+
+#ifdef CONFIG_SH_AUDIO_DRIVER /* 22-005 */
+	diag_codec_switch = msm8x16_wcd_priv;
+#endif /* CONFIG_SH_AUDIO_DRIVER */ /* 22-005 */
+
 	return 0;
 }
 
@@ -5745,6 +5676,7 @@ static int msm8x16_wcd_disable_static_supplies_to_optimum(
 
 int msm8x16_wcd_suspend(struct snd_soc_codec *codec)
 {
+	int ret = 0;
 	struct msm8916_asoc_mach_data *pdata = NULL;
 	struct msm8x16_wcd *msm8x16 = codec->control_data;
 	struct msm8x16_wcd_pdata *msm8x16_pdata = msm8x16->dev->platform_data;
@@ -5758,10 +5690,24 @@ int msm8x16_wcd_suspend(struct snd_soc_codec *codec)
 				&pdata->disable_mclk_work);
 		mutex_lock(&pdata->cdc_mclk_mutex);
 		if (atomic_read(&pdata->mclk_enabled) == true) {
-			pdata->digital_cdc_clk.clk_val = 0;
-			afe_set_digital_codec_core_clock(
+			switch (q6core_get_avs_version()) {
+			case Q6_SUBSYS_AVS2_6:
+				pdata->digital_cdc_clk.clk_val = 0;
+				ret = afe_set_digital_codec_core_clock(
 					AFE_PORT_ID_PRIMARY_MI2S_RX,
 					&pdata->digital_cdc_clk);
+				break;
+			case Q6_SUBSYS_AVS2_7:
+				pdata->digital_cdc_core_clk.enable = 0;
+				ret = afe_set_lpass_clock_v2(
+					AFE_PORT_ID_PRIMARY_MI2S_RX,
+					&pdata->digital_cdc_core_clk);
+				break;
+			case Q6_SUBSYS_INVALID:
+			default:
+				pr_err("%s: disable clk failed\n", __func__);
+				break;
+			}
 			atomic_set(&pdata->mclk_enabled, false);
 		}
 		mutex_unlock(&pdata->cdc_mclk_mutex);
@@ -5940,6 +5886,8 @@ static int msm8x16_wcd_spmi_probe(struct spmi_device *spmi)
 	struct msm8x16_wcd_pdata *pdata;
 	struct resource *wcd_resource;
 	int adsp_state;
+	static int spmi_dev_registered_cnt;
+	int adsp_ver = 0;
 
 	dev_dbg(&spmi->dev, "%s(%d):slave ID = 0x%x\n",
 		__func__, __LINE__,  spmi->sid);
@@ -5951,6 +5899,13 @@ static int msm8x16_wcd_spmi_probe(struct spmi_device *spmi)
 		return -EPROBE_DEFER;
 	}
 
+	adsp_ver = core_get_adsp_ver();
+	if (adsp_ver < 0) {
+		dev_err(&spmi->dev, "%s: Get adsp version failed %d\n",
+			__func__, adsp_ver);
+		ret = -EPROBE_DEFER;
+		goto rtn;
+	}
 	wcd_resource = spmi_get_resource(spmi, NULL, IORESOURCE_MEM, 0);
 	if (!wcd_resource) {
 		dev_err(&spmi->dev, "Unable to get Tombak base address\n");
@@ -5977,14 +5932,15 @@ static int msm8x16_wcd_spmi_probe(struct spmi_device *spmi)
 		dev_dbg(&spmi->dev,
 				"%s: irq initialization passed\n", __func__);
 	}
-		goto rtn;
+		spmi_dev_registered_cnt++;
+		goto register_codec;
 	default:
 		ret = -EINVAL;
 		goto rtn;
 	}
 
 
-	dev_dbg(&spmi->dev, "%s(%d):start addr = 0x%pa\n",
+	dev_dbg(&spmi->dev, "%s(%d):start addr = 0x%pK\n",
 		__func__, __LINE__,  &wcd_resource->start);
 
 	if (wcd_resource->start != TOMBAK_CORE_0_SPMI_ADDR)
@@ -6041,17 +5997,24 @@ static int msm8x16_wcd_spmi_probe(struct spmi_device *spmi)
 		goto err_supplies;
 	}
 	dev_set_drvdata(&spmi->dev, msm8x16);
-
-	ret = snd_soc_register_codec(&spmi->dev, &soc_codec_dev_msm8x16_wcd,
-				     msm8x16_wcd_i2s_dai,
-				     ARRAY_SIZE(msm8x16_wcd_i2s_dai));
-	if (ret) {
-		dev_err(&spmi->dev,
-			"%s:snd_soc_register_codec failed with error %d\n",
-			__func__, ret);
-	} else {
-		goto rtn;
+	spmi_dev_registered_cnt++;
+register_codec:
+	if ((spmi_dev_registered_cnt == MAX_MSM8X16_WCD_DEVICE) && (!ret)) {
+		if (msm8x16_wcd_modules[0].spmi) {
+			ret = snd_soc_register_codec(
+					&msm8x16_wcd_modules[0].spmi->dev,
+					&soc_codec_dev_msm8x16_wcd,
+					msm8x16_wcd_i2s_dai,
+					ARRAY_SIZE(msm8x16_wcd_i2s_dai));
+			if (ret) {
+				dev_err(&spmi->dev,
+				"%s:snd_soc_register_codec failed with error %d\n",
+				__func__, ret);
+				goto err_supplies;
+			}
+		}
 	}
+	return ret;
 err_supplies:
 	msm8x16_wcd_disable_supplies(msm8x16, pdata);
 err_codec:

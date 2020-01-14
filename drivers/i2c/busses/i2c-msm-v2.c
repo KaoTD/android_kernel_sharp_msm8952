@@ -38,6 +38,13 @@
 #include <linux/msm-bus-board.h>
 #include <linux/i2c/i2c-msm-v2.h>
 
+#if defined( CONFIG_I2C_CUST_SH )
+#define	XFER_RETRY	2
+#define SH_I2C_WAIT 30
+static int i2c_msm_frmwrk_sub_xfer(struct i2c_adapter *adap,
+							struct i2c_msg msgs[], int num, int cnt);
+#endif /* #if defined( CONFIG_I2C_CUST_SH ) */
+
 #if defined(CONFIG_I2C_XFER_RETRY)
 #define I2C_XFER_RETRY_MAX 2
 #define I2C_XFER_RETRY_DELAY 30
@@ -80,6 +87,64 @@ const char *i2c_msm_err_str_table[] = {
 	[I2C_MSM_ERR_CORE_CLK] = "CLOCK OFF: Check Core Clock",
 	[I2C_MSM_ERR_OVR_UNDR_RUN] = "OVER_UNDER_RUN_ERROR",
 };
+
+#if defined(CONFIG_I2C_EXPAND_DEBUG_FUNCTION_SH)
+enum {
+	SH_DEBUG_NOLOG   = 1U << 0, /* 1*/
+	SH_DEBUG_ERROR   = 1U << 1, /* 2*/
+	SH_DEBUG_NORMAL  = 1U << 2, /* 4*/
+	SH_DEBUG_SUSRESU = 1U << 3, /* 8*/
+	SH_DEBUG_COM     = 1U << 4, /*16*/
+	SH_DEBUG_GPIO    = 1U << 5, /*32*/
+	SH_DEBUG_IRQ     = 1U << 6, /*64*/
+};
+
+static int sh_debug_i2c = 2;
+module_param_named(sh_debug_i2c, sh_debug_i2c,
+		   int, S_IRUGO | S_IWUSR | S_IWGRP);
+
+#define I2CDB_ERR(fmt, ...) do {\
+	if (sh_debug_i2c & SH_DEBUG_ERROR) {\
+		dev_err(ctrl->dev, "[BSP]:%s() " fmt, __func__, ##__VA_ARGS__);\
+	}\
+} while (0)
+
+#define I2CDB_INFO(fmt, ...) do {\
+	if (sh_debug_i2c & SH_DEBUG_NORMAL) {\
+		dev_info(ctrl->dev, "[BSP]:%s() " fmt, __func__, ##__VA_ARGS__);\
+	}\
+} while (0)
+
+#define I2CDB_SUSRESU(fmt, ...) do {\
+	if (sh_debug_i2c & SH_DEBUG_SUSRESU) {\
+		dev_info(ctrl->dev, "[BSP]:%s() " fmt, __func__, ##__VA_ARGS__);\
+	}\
+} while (0)
+
+#define I2CDB_COM(fmt, ...) do {\
+	if (sh_debug_i2c & SH_DEBUG_COM) {\
+		dev_info(ctrl->dev, "[BSP]:%s() " fmt, __func__, ##__VA_ARGS__);\
+	}\
+} while (0)
+
+#define I2CDB_GPIO(fmt, ...) do {\
+	if (sh_debug_i2c & SH_DEBUG_GPIO) {\
+		dev_info(ctrl->dev, "[BSP]:%s() " fmt, __func__, ##__VA_ARGS__);\
+	}\
+} while (0)
+#define I2CDB_IRQ(fmt, ...) do {\
+	if (sh_debug_i2c & SH_DEBUG_IRQ) {\
+		dev_info(ctrl->dev, "[BSP]:%s() " fmt, __func__, ##__VA_ARGS__);\
+	}\
+} while (0)
+#else	/* CONFIG_I2C_EXPAND_DEBUG_FUNCTION_SH */
+#define I2CDB_ERR(fmt, ...)
+#define I2CDB_INFO(fmt, ...)
+#define I2CDB_SUSRESU(fmt, ...)
+#define I2CDB_COM(fmt, ...)
+#define I2CDB_GPIO(fmt, ...)
+#define I2CDB_IRQ(fmt, ...)
+#endif	/* defined(CONFIG_I2C_EXPAND_DEBUG_FUNCTION_SH) */
 
 static void i2c_msm_dbg_dump_diag(struct i2c_msm_ctrl *ctrl,
 				bool use_param_vals, u32 status, u32 qup_op)
@@ -286,6 +351,7 @@ static int i2c_msm_qup_sw_reset(struct i2c_msm_ctrl *ctrl)
 {
 	int ret;
 
+	I2CDB_INFO("start\n");
 	writel_relaxed(1, ctrl->rsrcs.base + QUP_SW_RESET);
 	/*
 	 * Ensure that QUP that reset state is written before waiting for a the
@@ -298,6 +364,7 @@ static int i2c_msm_qup_sw_reset(struct i2c_msm_ctrl *ctrl)
 			ctrl->xfer.err = I2C_MSM_ERR_CORE_CLK;
 		dev_err(ctrl->dev, "error on issuing QUP software-reset\n");
 	}
+	I2CDB_INFO("No problem(end) ret=%d\n",ret);
 	return ret;
 }
 
@@ -433,6 +500,8 @@ static int i2c_msm_set_mstr_clk_ctl(struct i2c_msm_ctrl *ctrl, int fs_div,
 	u32 reg_val = 0;
 	struct i2c_msm_clk_div_fld *itr = i2c_msm_clk_div_map;
 
+	I2CDB_INFO("start\n");
+
 	/* set noise rejection values for scl and sda */
 	reg_val = I2C_MSM_SCL_NOISE_REJECTION(reg_val, noise_rjct_scl);
 	reg_val = I2C_MSM_SDA_NOISE_REJECTION(reg_val, noise_rjct_sda);
@@ -460,6 +529,8 @@ static int i2c_msm_set_mstr_clk_ctl(struct i2c_msm_ctrl *ctrl, int fs_div,
 	/* format values in clk-ctl cache */
 	ctrl->mstr_clk_ctl = (reg_val & (~0xff07ff)) | ((ht_div & 0xff) << 16)
 							|(fs_div & 0xff);
+
+	I2CDB_INFO("mstr_clk_ctl=%dKHz\n",(ctrl->rsrcs.clk_freq_out / 1000));
 
 	return ret;
 }
@@ -675,6 +746,8 @@ static int i2c_msm_fifo_xfer_process(struct i2c_msm_ctrl *ctrl)
 	struct i2c_msm_xfer_buf first_buf = ctrl->xfer.cur_buf;
 	int ret;
 
+	I2CDB_INFO("start\n");
+
 	/* load fifo while in pause state to avoid race conditions */
 	ret = i2c_msm_qup_state_set(ctrl, QUP_STATE_PAUSE);
 	if (ret < 0)
@@ -701,6 +774,7 @@ static int i2c_msm_fifo_xfer_process(struct i2c_msm_ctrl *ctrl)
 	while (i2c_msm_xfer_next_buf(ctrl))
 		i2c_msm_fifo_read_xfer_buf(ctrl);
 
+	I2CDB_INFO("No problem(end)\n");
 	return 0;
 }
 
@@ -710,6 +784,8 @@ static int i2c_msm_fifo_xfer_process(struct i2c_msm_ctrl *ctrl)
 static int i2c_msm_fifo_xfer(struct i2c_msm_ctrl *ctrl)
 {
 	int ret;
+
+	I2CDB_INFO("start\n");
 
 	i2c_msm_dbg(ctrl, MSM_DBG, "Starting FIFO transfer");
 
@@ -728,6 +804,8 @@ static int i2c_msm_fifo_xfer(struct i2c_msm_ctrl *ctrl)
 	i2c_msm_qup_xfer_init_run_state(ctrl);
 
 	ret = i2c_msm_fifo_xfer_process(ctrl);
+
+	I2CDB_INFO("No problem(end)\n");
 
 	return ret;
 }
@@ -1517,6 +1595,8 @@ static int i2c_msm_qup_poll_bus_active_unset(struct i2c_msm_ctrl *ctrl)
 	int    ret      = 0;
 	size_t read_cnt = 0;
 
+	I2CDB_INFO("start timeout=%lu\n",timeout);
+
 	do {
 		if (!(readl_relaxed(base + QUP_I2C_STATUS) & QUP_BUS_ACTIVE))
 			goto poll_active_end;
@@ -1878,6 +1958,8 @@ static void i2c_msm_qup_init(struct i2c_msm_ctrl *ctrl)
 	u32 state;
 	void __iomem *base = ctrl->rsrcs.base;
 
+	I2CDB_INFO("start\n");
+
 	i2c_msm_prof_evnt_add(ctrl, MSM_PROF, I2C_MSM_PROF_RESET, 0, 0, 0);
 
 	i2c_msm_qup_sw_reset(ctrl);
@@ -1906,6 +1988,8 @@ static void i2c_msm_qup_init(struct i2c_msm_ctrl *ctrl)
 	if (!(state & QUP_I2C_MAST_GEN))
 		dev_err(ctrl->dev,
 			"error on verifying HW support (I2C_MAST_GEN=0)\n");
+
+	I2CDB_INFO("No problem(end)\n");
 }
 
 /*
@@ -1969,6 +2053,8 @@ static int qup_i2c_recover_bus_busy(struct i2c_msm_ctrl *ctrl)
 
 static int i2c_msm_qup_post_xfer(struct i2c_msm_ctrl *ctrl, int err)
 {
+	I2CDB_INFO("start\n");
+
 	/* poll until bus is released */
 	if (i2c_msm_qup_poll_bus_active_unset(ctrl)) {
 		if ((ctrl->xfer.err == I2C_MSM_ERR_ARB_LOST) ||
@@ -2006,6 +2092,7 @@ static int i2c_msm_qup_post_xfer(struct i2c_msm_ctrl *ctrl, int err)
 		err = -ENOTCONN;
 	}
 
+	I2CDB_INFO("No problem(end) err=%d\n",err);
 	return err;
 }
 
@@ -2017,17 +2104,23 @@ i2c_msm_qup_choose_mode(struct i2c_msm_ctrl *ctrl)
 	size_t rx_cnt_sum = xfer->rx_cnt + xfer->rx_ovrhd_cnt;
 	size_t tx_cnt_sum = xfer->tx_cnt + xfer->tx_ovrhd_cnt;
 
+	I2CDB_INFO("start\n");
 
 	if (ctrl->dbgfs.force_xfer_mode != I2C_MSM_XFER_MODE_NONE)
 		return ctrl->dbgfs.force_xfer_mode;
 
 	if (((rx_cnt_sum < fifo->input_fifo_sz) &&
-		(tx_cnt_sum < fifo->output_fifo_sz)))
+		(tx_cnt_sum < fifo->output_fifo_sz))){
+		I2CDB_INFO("mode=MODE_FIFO\n");
 		return I2C_MSM_XFER_MODE_FIFO;
+	}
 
-	if (ctrl->rsrcs.disable_dma)
+	if (ctrl->rsrcs.disable_dma){
+		I2CDB_INFO("mode=MODE_BLOCK\n");
 		return I2C_MSM_XFER_MODE_BLOCK;
+	}
 
+	I2CDB_INFO("mode=MODE_DMA\n");
 	return I2C_MSM_XFER_MODE_DMA;
 }
 
@@ -2058,6 +2151,8 @@ static int i2c_msm_xfer_wait_for_completion(struct i2c_msm_ctrl *ctrl,
 	long  time_left;
 	int   ret = 0;
 
+	I2CDB_INFO("start\n");
+
 	time_left = wait_for_completion_timeout(complete, xfer->timeout);
 	if (!time_left) {
 		xfer->err = I2C_MSM_ERR_TIMEOUT;
@@ -2072,7 +2167,7 @@ static int i2c_msm_xfer_wait_for_completion(struct i2c_msm_ctrl *ctrl,
 		i2c_msm_prof_evnt_add(ctrl, MSM_DBG, I2C_MSM_COMPLT_OK,
 					xfer->timeout, time_left, 0);
 	}
-
+	I2CDB_INFO("No problem(end)\n");
 	return ret;
 }
 
@@ -2172,6 +2267,8 @@ static void i2c_msm_pm_clk_disable_unprepare(struct i2c_msm_ctrl *ctrl)
 static int i2c_msm_pm_clk_prepare_enable(struct i2c_msm_ctrl *ctrl)
 {
 	int ret;
+	I2CDB_INFO("start\n");
+
 	ret = clk_prepare_enable(ctrl->rsrcs.iface_clk);
 	if (ret) {
 		dev_err(ctrl->dev,
@@ -2185,6 +2282,7 @@ static int i2c_msm_pm_clk_prepare_enable(struct i2c_msm_ctrl *ctrl)
 		dev_err(ctrl->dev,
 			"error clk_prepare_enable(core_clk):%d\n", ret);
 	}
+	I2CDB_INFO("No problem(end)\n");
 	return ret;
 }
 
@@ -2192,6 +2290,8 @@ static int i2c_msm_pm_xfer_start(struct i2c_msm_ctrl *ctrl)
 {
 	int ret;
 	struct i2c_msm_xfer *xfer = &ctrl->xfer;
+
+	I2CDB_INFO("start\n");
 	mutex_lock(&ctrl->xfer.mtx);
 
 	/* if system is suspended just bail out */
@@ -2225,6 +2325,7 @@ static int i2c_msm_pm_xfer_start(struct i2c_msm_ctrl *ctrl)
 	atomic_set(&ctrl->xfer.is_active, 1);
 
 	enable_irq(ctrl->rsrcs.irq);
+	I2CDB_INFO("No problem(end)\n");
 	return 0;
 }
 
@@ -2277,10 +2378,39 @@ static void i2c_msm_xfer_scan(struct i2c_msm_ctrl *ctrl)
 
 static int
 i2c_msm_frmwrk_xfer(struct i2c_adapter *adap, struct i2c_msg msgs[], int num)
+#if defined( CONFIG_I2C_CUST_SH )
+{
+	int	ret;
+	int	cnt;
+	int	retry_cnt = XFER_RETRY;
+#if defined(CONFIG_I2C_EXPAND_DEBUG_FUNCTION_SH)
+	struct i2c_msm_ctrl      *ctrl = i2c_get_adapdata(adap);
+#endif	/* CONFIG_I2C_EXPAND_DEBUG_FUNCTION_SH */
+
+	I2CDB_INFO("start\n");
+
+	for (cnt=0; cnt<=retry_cnt; cnt++) {
+		ret = i2c_msm_frmwrk_sub_xfer(adap, msgs, num, cnt);
+		I2CDB_INFO("i2c_msm_frmwrk_sub_xfer call ret=%d\n",ret);
+		if (ret >= 0) {
+			return ret;
+		}
+	}
+	I2CDB_INFO("frmwrk_sub_xfer(error) ret=%d\n",ret);
+	return ret;
+}
+static int
+i2c_msm_frmwrk_sub_xfer(struct i2c_adapter *adap, struct i2c_msg msgs[], int num, int cnt)
+#endif /* #if defined( CONFIG_I2C_CUST_SH ) */
 {
 	int ret = 0;
 	struct i2c_msm_ctrl      *ctrl = i2c_get_adapdata(adap);
 	struct i2c_msm_xfer      *xfer = &ctrl->xfer;
+#if defined( CONFIG_I2C_CUST_SH )
+	char slave_adr;
+#endif /* #if defined( CONFIG_I2C_CUST_SH ) */
+
+	I2CDB_INFO("start\n");
 
 	if (IS_ERR_OR_NULL(msgs)) {
 		dev_err(ctrl->dev, " error on msgs Accessing invalid  pointer location\n");
@@ -2346,6 +2476,19 @@ i2c_msm_frmwrk_xfer(struct i2c_adapter *adap, struct i2c_msg msgs[], int num)
 		i2c_msm_prof_evnt_dump(ctrl);
 
 	i2c_msm_pm_xfer_end(ctrl);
+
+#if defined( CONFIG_I2C_CUST_SH )
+	slave_adr = msgs->addr;
+	if( ret < 0){
+			I2CDB_ERR("Retry [%d] [Addr=0x%x]\n", (cnt+1), (char)slave_adr);
+		udelay( SH_I2C_WAIT );
+	}else{
+		if (cnt != 0) {
+			I2CDB_ERR("Retry Complete [Addr=0x%x]\n", (char)slave_adr);
+		}
+	}
+#endif /* #if defined( CONFIG_I2C_CUST_SH ) */
+	I2CDB_INFO("No problem(end) ret=%d\n",ret);
 	return ret;
 }
 
@@ -2575,9 +2718,12 @@ i2c_msm_rsrcs_gpio_get_state(struct i2c_msm_ctrl *ctrl, const char *name)
 	struct pinctrl_state *pin_state
 			= pinctrl_lookup_state(ctrl->rsrcs.pinctrl, name);
 
+	I2CDB_INFO("start\n");
 	if (IS_ERR_OR_NULL(pin_state))
 		dev_info(ctrl->dev, "note pinctrl_lookup_state(%s) err:%ld\n",
 						name, PTR_ERR(pin_state));
+
+	I2CDB_INFO("pinctrl_lookup_state(%s) state:%ld\n",name,PTR_ERR(pin_state));
 	return pin_state;
 }
 
@@ -2588,6 +2734,8 @@ i2c_msm_rsrcs_gpio_get_state(struct i2c_msm_ctrl *ctrl, const char *name)
  */
 static int i2c_msm_rsrcs_gpio_pinctrl_init(struct i2c_msm_ctrl *ctrl)
 {
+	I2CDB_INFO("start\n");
+
 	ctrl->rsrcs.pinctrl = devm_pinctrl_get(ctrl->dev);
 	if (IS_ERR_OR_NULL(ctrl->rsrcs.pinctrl)) {
 		dev_err(ctrl->dev, "error devm_pinctrl_get() failed err:%ld\n",
@@ -2601,6 +2749,7 @@ static int i2c_msm_rsrcs_gpio_pinctrl_init(struct i2c_msm_ctrl *ctrl)
 	ctrl->rsrcs.gpio_state_suspend =
 		i2c_msm_rsrcs_gpio_get_state(ctrl, I2C_MSM_PINCTRL_SUSPEND);
 
+	I2CDB_INFO("No problem(end)\n");
 	return 0;
 }
 
@@ -2609,6 +2758,8 @@ static void i2c_msm_pm_pinctrl_state(struct i2c_msm_ctrl *ctrl,
 {
 	struct pinctrl_state *pins_state;
 	const char           *pins_state_name;
+
+	I2CDB_INFO("start\n");
 
 	if (runtime_active) {
 		pins_state      = ctrl->rsrcs.gpio_state_active;
@@ -2629,6 +2780,7 @@ static void i2c_msm_pm_pinctrl_state(struct i2c_msm_ctrl *ctrl,
 			"error pinctrl state-name:'%s' is not configured\n",
 			pins_state_name);
 	}
+	I2CDB_INFO("No problem(end)\n");
 }
 
 /*

@@ -1,4 +1,4 @@
-/* Copyright (c) 2010-2015, 2017, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2010-2017, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -1691,8 +1691,7 @@ int hdmi_edid_parser(void *input)
 
 	if (!edid_ctrl) {
 		DEV_ERR("%s: invalid input\n", __func__);
-		status = -EINVAL;
-		goto error;
+		return -EINVAL;
 	}
 
 	/* reset edid data for new hdmi connection */
@@ -1723,6 +1722,13 @@ int hdmi_edid_parser(void *input)
 		DEV_DBG("HDMI DVI mode: %s\n",
 			edid_ctrl->sink_mode ? "no" : "yes");
 		goto bail;
+	}
+
+	/* Find out if CEA extension blocks exceeding max limit */
+	if (num_of_cea_blocks >= MAX_EDID_BLOCKS) {
+		DEV_WARN("%s: HDMI EDID exceeded max CEA blocks limit\n",
+				__func__);
+		num_of_cea_blocks = MAX_EDID_BLOCKS - 1;
 	}
 
 	/* check for valid CEA block */

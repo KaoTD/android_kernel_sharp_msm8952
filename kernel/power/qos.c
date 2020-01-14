@@ -47,6 +47,21 @@
 #include <linux/uaccess.h>
 #include <linux/export.h>
 
+#ifdef CONFIG_SHSYS_CUST_DEBUG
+#include <linux/module.h>
+#include <soc/qcom/pm.h>
+extern int get_latency_value(int mode);
+enum {
+	SH_DEBUG_QOS_REQUEST           = 1U << 0,
+	SH_DEBUG_PREVENT_PC_STANDALONE = 1U << 1,
+	SH_DEBUG_PREVENT_PC            = 1U << 2,
+};
+static int sh_debug_mask = 0;
+module_param_named(
+	sh_debug_mask, sh_debug_mask, int, S_IRUGO | S_IWUSR | S_IWGRP
+);
+#endif /* CONFIG_SHSYS_CUST_DEBUG */
+
 /*
  * locking rule: all changes to constraints or notifiers lists
  * or pm_qos_object list and pm_qos_objects need to happen with pm_qos_lock
@@ -129,6 +144,46 @@ static const struct file_operations pm_qos_power_fops = {
 	.release = pm_qos_power_release,
 	.llseek = noop_llseek,
 };
+
+#ifdef CONFIG_SHSYS_CUST_DEBUG
+static void sh_qos_debug(struct pm_qos_request *req, s32 new_value,
+	bool timeout, s32 timeout_us)
+{
+	int class = req->pm_qos_class;
+
+	if (sh_debug_mask & SH_DEBUG_QOS_REQUEST) {
+		if(new_value == PM_QOS_DEFAULT_VALUE) {
+			pr_info("QoS: [Release] req %pS, class %d\n", req, class);
+		} else {
+			if (timeout) {
+				pr_info("QoS: [Update] req %pS, class %d, value %dus, timeout(us) %d\n",
+					req, class, new_value, timeout_us);
+			} else {
+				pr_info("QoS: [Update] req %pS, class %d, value %dus\n",
+					req, class, new_value);
+			}
+		}
+	}
+
+	if (sh_debug_mask & SH_DEBUG_PREVENT_PC_STANDALONE) {
+		if (class == PM_QOS_CPU_DMA_LATENCY) {
+			if (new_value == PM_QOS_DEFAULT_VALUE) {
+				pr_info("QoS: [Release] req %pS\n", req);
+				return;
+			}
+			if (new_value < get_latency_value(MSM_PM_SLEEP_MODE_POWER_COLLAPSE_STANDALONE)){
+				if (timeout) {
+					pr_info("QoS: [Update] req %pS, value %dus, timeout(us) %d\n",
+						req, new_value, timeout_us);
+				} else {
+					pr_info("QoS: [Update] req %pS, value %dus\n", req, new_value);
+				}
+			}
+		}
+	}
+}
+#endif /* CONFIG_SHSYS_CUST_DEBUG */
+
 
 /* unlocked internal variant */
 static inline int pm_qos_get_value(struct pm_qos_constraints *c)
@@ -246,7 +301,11 @@ int pm_qos_update_target(struct pm_qos_constraints *c,
 
 	spin_unlock_irqrestore(&pm_qos_lock, flags);
 
-	if (prev_value != curr_value) {
+	/*
+	 * if cpu mask bits are set, call the notifier call chain
+	 * to update the new qos restriction for the cores
+	 */
+	if (!cpumask_empty(&cpus)) {
 		blocking_notifier_call_chain(c->notifiers,
 					     (unsigned long)curr_value,
 					     &cpus);
@@ -457,6 +516,10 @@ void pm_qos_add_request(struct pm_qos_request *req,
 		WARN(1, KERN_ERR "pm_qos_add_request() called for already added request\n");
 		return;
 	}
+#ifdef CONFIG_SHSYS_CUST_DEBUG
+	if(sh_debug_mask != 0)
+		sh_qos_debug(req, value, false, 0);
+#endif /* CONFIG_SHSYS_CUST_DEBUG */
 
 	switch (req->type) {
 	case PM_QOS_REQ_AFFINE_CORES:
@@ -469,7 +532,6 @@ void pm_qos_add_request(struct pm_qos_request *req,
 #ifdef CONFIG_SMP
 	case PM_QOS_REQ_AFFINE_IRQ:
 		if (irq_can_set_affinity(req->irq)) {
-			int ret = 0;
 			struct irq_desc *desc = irq_to_desc(req->irq);
 			struct cpumask *mask = desc->irq_data.affinity;
 
@@ -479,13 +541,6 @@ void pm_qos_add_request(struct pm_qos_request *req,
 			req->irq_notify.notify = pm_qos_irq_notify;
 			req->irq_notify.release = pm_qos_irq_release;
 
-			ret = irq_set_affinity_notifier(req->irq,
-					&req->irq_notify);
-			if (ret) {
-				WARN(1, KERN_ERR "IRQ affinity notify set failed\n");
-				req->type = PM_QOS_REQ_ALL_CORES;
-				cpumask_setall(&req->cpus_affine);
-			}
 		} else {
 			req->type = PM_QOS_REQ_ALL_CORES;
 			cpumask_setall(&req->cpus_affine);
@@ -506,6 +561,24 @@ void pm_qos_add_request(struct pm_qos_request *req,
 	INIT_DELAYED_WORK(&req->work, pm_qos_work_fn);
 	pm_qos_update_target(pm_qos_array[pm_qos_class]->constraints,
 			     req, PM_QOS_ADD_REQ, value);
+
+#ifdef CONFIG_SMP
+	if (req->type == PM_QOS_REQ_AFFINE_IRQ &&
+			irq_can_set_affinity(req->irq)) {
+		int ret = 0;
+
+		ret = irq_set_affinity_notifier(req->irq,
+					&req->irq_notify);
+		if (ret) {
+			WARN(1, "IRQ affinity notify set failed\n");
+			req->type = PM_QOS_REQ_ALL_CORES;
+			cpumask_setall(&req->cpus_affine);
+			pm_qos_update_target(
+				pm_qos_array[pm_qos_class]->constraints,
+				req, PM_QOS_UPDATE_REQ, value);
+		}
+	}
+#endif
 }
 EXPORT_SYMBOL_GPL(pm_qos_add_request);
 
@@ -529,8 +602,17 @@ void pm_qos_update_request(struct pm_qos_request *req,
 		WARN(1, KERN_ERR "pm_qos_update_request() called for unknown object\n");
 		return;
 	}
+#ifdef CONFIG_SHSYS_CUST_DEBUG
+	if(sh_debug_mask != 0)
+		sh_qos_debug(req, new_value, false, 0);
+#endif /* CONFIG_SHSYS_CUST_DEBUG */
 
+#ifdef CONFIG_SHSYS_CUST
+	if (delayed_work_pending(&req->work))
+		cancel_delayed_work_sync(&req->work);
+#else /* CONFIG_SHSYS_CUST */
 	cancel_delayed_work_sync(&req->work);
+#endif /* CONFIG_SHSYS_CUST */
 	__pm_qos_update_request(req, new_value);
 }
 EXPORT_SYMBOL_GPL(pm_qos_update_request);
@@ -552,7 +634,17 @@ void pm_qos_update_request_timeout(struct pm_qos_request *req, s32 new_value,
 		 "%s called for unknown object.", __func__))
 		return;
 
+#ifdef CONFIG_SHSYS_CUST_DEBUG
+	if(sh_debug_mask != 0)
+		sh_qos_debug(req, new_value, true, timeout_us);
+#endif /* CONFIG_SHSYS_CUST_DEBUG */
+
+#ifdef CONFIG_SHSYS_CUST
+	if (delayed_work_pending(&req->work))
+		cancel_delayed_work_sync(&req->work);
+#else /* CONFIG_SHSYS_CUST */
 	cancel_delayed_work_sync(&req->work);
+#endif /* CONFIG_SHSYS_CUST */
 
 	if (new_value != req->node.prio)
 		pm_qos_update_target(
@@ -580,8 +672,27 @@ void pm_qos_remove_request(struct pm_qos_request *req)
 		WARN(1, KERN_ERR "pm_qos_remove_request() called for unknown object\n");
 		return;
 	}
+#ifdef CONFIG_SHSYS_CUST_DEBUG
+	if(sh_debug_mask != 0)
+		sh_qos_debug(req, PM_QOS_DEFAULT_VALUE, false, 0);
+#endif /* CONFIG_SHSYS_CUST_DEBUG */
 
+#ifdef CONFIG_SHSYS_CUST
+	if (delayed_work_pending(&req->work))
+		cancel_delayed_work_sync(&req->work);
+#else /* CONFIG_SHSYS_CUST */
 	cancel_delayed_work_sync(&req->work);
+#endif /* CONFIG_SHSYS_CUST */
+
+#ifdef CONFIG_SMP
+	if (req->type == PM_QOS_REQ_AFFINE_IRQ) {
+		int ret = 0;
+		/* Get the current affinity */
+		ret = irq_release_affinity_notifier(&req->irq_notify);
+		if (ret)
+			WARN(1, "IRQ affinity notify set failed\n");
+	}
+#endif
 
 	pm_qos_update_target(pm_qos_array[req->pm_qos_class]->constraints,
 			     req, PM_QOS_REMOVE_REQ,

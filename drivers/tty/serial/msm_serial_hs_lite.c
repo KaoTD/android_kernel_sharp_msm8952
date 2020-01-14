@@ -53,6 +53,11 @@
 #include <linux/msm-bus.h>
 #include "msm_serial_hs_hwreg.h"
 
+#ifdef CONFIG_SERIAL_CUST_SH
+#include <linux/pinctrl/consumer.h>
+#define PINCTRL_STATE_SERIAL_ACTIVE "active"
+#endif /* CONFIG_SERIAL_CUST_SH */
+
 /*
  * There are 3 different kind of UART Core available on MSM.
  * High Speed UART (i.e. Legacy HSUART), GSBI based HSUART
@@ -72,6 +77,64 @@ enum uart_func_mode {
 	UART_TWO_WIRE, /* can't support HW Flow control. */
 	UART_FOUR_WIRE,/* can support HW Flow control. */
 };
+
+#if defined(CONFIG_SERIAL_EXPAND_DEBUG_FUNCTION_SH)
+enum {
+	SH_DEBUG_NOLOG   = 1U << 0, /* 1*/
+	SH_DEBUG_ERROR   = 1U << 1, /* 2*/
+	SH_DEBUG_NORMAL  = 1U << 2, /* 4*/
+	SH_DEBUG_SUSRESU = 1U << 3, /* 8*/
+	SH_DEBUG_COM     = 1U << 4, /*16*/
+	SH_DEBUG_GPIO    = 1U << 5, /*32*/
+	SH_DEBUG_IRQ     = 1U << 6, /*64*/
+};
+
+static int sh_debug_serial = 2;
+module_param_named(sh_debug_serial, sh_debug_serial,
+		   int, S_IRUGO | S_IWUSR | S_IWGRP);
+
+#define HSLDB_ERR(fmt, ...) do {\
+	if (sh_debug_serial & SH_DEBUG_ERROR) {\
+		dev_err(msm_hsl_port->uart.dev, "[BSP]:%s() " fmt, __func__, ##__VA_ARGS__);\
+	}\
+} while (0)
+
+#define HSLDB_INFO(fmt, ...) do {\
+	if (sh_debug_serial & SH_DEBUG_NORMAL) {\
+		dev_info(msm_hsl_port->uart.dev, "[BSP]:%s() " fmt, __func__, ##__VA_ARGS__);\
+	}\
+} while (0)
+
+#define HSLDB_SUSRESU(fmt, ...) do {\
+	if (sh_debug_serial & SH_DEBUG_SUSRESU) {\
+		dev_info(msm_hsl_port->uart.dev, "[BSP]:%s() " fmt, __func__, ##__VA_ARGS__);\
+	}\
+} while (0)
+
+#define HSLDB_COM(fmt, ...) do {\
+	if (sh_debug_serial & SH_DEBUG_COM) {\
+		dev_info(msm_hsl_port->uart.dev, "[BSP]:%s() " fmt, __func__, ##__VA_ARGS__);\
+	}\
+} while (0)
+
+#define HSLDB_GPIO(fmt, ...) do {\
+	if (sh_debug_serial & SH_DEBUG_GPIO) {\
+		dev_info(msm_hsl_port->uart.dev, "[BSP]:%s() " fmt, __func__, ##__VA_ARGS__);\
+	}\
+} while (0)
+#define HSLDB_IRQ(fmt, ...) do {\
+	if (sh_debug_serial & SH_DEBUG_IRQ) {\
+		dev_info(msm_hsl_port->uart.dev, "[BSP]:%s() " fmt, __func__, ##__VA_ARGS__);\
+	}\
+} while (0)
+#else	/* CONFIG_SERIAL_EXPAND_DEBUG_FUNCTION_SH */
+#define HSLDB_ERR(fmt, ...)
+#define HSLDB_INFO(fmt, ...)
+#define HSLDB_SUSRESU(fmt, ...)
+#define HSLDB_COM(fmt, ...)
+#define HSLDB_GPIO(fmt, ...)
+#define HSLDB_IRQ(fmt, ...)
+#endif	/* defined(CONFIG_SERIAL_EXPAND_DEBUG_FUNCTION_SH) */
 
 struct msm_hsl_port {
 	struct uart_port	uart;
@@ -94,6 +157,15 @@ struct msm_hsl_port {
 	u32			bus_perf_client;
 	/* BLSP UART required BUS Scaling data */
 	struct msm_bus_scale_pdata *bus_scale_table;
+#ifdef CONFIG_SHIRDA
+	bool use_irda;
+#endif
+#ifdef CONFIG_SERIAL_CUST_SH
+	bool use_pinctrl;
+	struct pinctrl *pinctrl;
+	struct pinctrl_state *pins_active;
+	struct pinctrl_state *pins_sleep;
+#endif /* CONFIG_SERIAL_CUST_SH */
 };
 
 #define UARTDM_VERSION_11_13	0
@@ -251,6 +323,71 @@ static int msm_hsl_config_uart_tx_rx_gpios(struct uart_port *port)
 exit_uart_config:
 	return ret;
 }
+#ifdef CONFIG_SERIAL_CUST_SH
+static void msm_hsl_pinctrl_init(struct platform_device *pdev,struct msm_hsl_port *msm_hsl_port)
+{
+	printk("[BSP-SERI]:%s() start",__func__ );
+	if(!msm_hsl_port) {
+		pr_err("Error is NULL.\n");
+		return ;
+	}
+
+	msm_hsl_port->use_pinctrl = false;
+
+	msm_hsl_port->pinctrl = devm_pinctrl_get(&pdev->dev);
+	if (IS_ERR_OR_NULL(msm_hsl_port->pinctrl)) {
+		pr_err("Failed to get pin ctrl\n");
+		return ;
+	}
+
+	msm_hsl_port->pins_active = pinctrl_lookup_state(msm_hsl_port->pinctrl,
+				PINCTRL_STATE_SERIAL_ACTIVE);
+	if (IS_ERR_OR_NULL(msm_hsl_port->pins_active)) {
+		pr_err("Failed to lookup pinctrl default state\n");
+		return ;
+	}
+
+	msm_hsl_port->pins_sleep = pinctrl_lookup_state(msm_hsl_port->pinctrl,
+				PINCTRL_STATE_SLEEP);
+	if (IS_ERR_OR_NULL(msm_hsl_port->pins_sleep)) {
+		pr_err("Failed to lookup pinctrl sleep state\n");
+		return ;
+	}
+
+	printk("[BSP-SERI]:%s() end",__func__ );
+	msm_hsl_port->use_pinctrl = true;
+
+	return;
+}
+
+static int msm_hsl_pinctrl_select(struct uart_port *port, bool flg)
+{
+	struct platform_device *pdev = to_platform_device(port->dev);
+	struct msm_hsl_port *msm_hsl_port = UART_TO_MSM(port);
+	int ret = 0;
+
+	printk("[BSP-SERI]:%s() flg=%d",__func__,flg );
+
+	if(!msm_hsl_port->use_pinctrl) {
+		return 0;
+	}
+
+	if(flg) {
+		printk("[BSP-SERI]:%s() active",__func__ );
+		ret = pinctrl_select_state(msm_hsl_port->pinctrl, msm_hsl_port->pins_active);
+	} else {
+		printk("[BSP-SERI]:%s() sleep",__func__ );
+		ret = pinctrl_select_state(msm_hsl_port->pinctrl, msm_hsl_port->pins_sleep);
+	}
+
+	if (ret) {
+		dev_err(&pdev->dev, "%s: Can not set pins:flg=%d ,ret= %d \n",
+		__func__, flg , ret);
+	}
+
+	return ret;
+}
+#endif /* CONFIG_SERIAL_CUST_SH */
 
 /**
  * msm_hsl_unconfig_uart_tx_rx_gpios: Unconfigures UART Tx and RX GPIOs
@@ -362,6 +499,8 @@ static void msm_hsl_unconfig_uart_gpios(struct uart_port *port)
 	msm_hsl_unconfig_uart_tx_rx_gpios(port);
 	if (msm_hsl_port->func_mode == UART_FOUR_WIRE)
 		msm_hsl_unconfig_uart_hwflow_gpios(port);
+
+	HSLDB_INFO("No problem(end) \n");
 }
 static int get_line(struct platform_device *pdev)
 {
@@ -515,11 +654,14 @@ static void msm_hsl_stop_tx(struct uart_port *port)
 	msm_hsl_port->imr &= ~UARTDM_ISR_TXLEV_BMSK;
 	msm_hsl_write(port, msm_hsl_port->imr,
 		regmap[msm_hsl_port->ver_id][UARTDM_IMR]);
+	HSLDB_INFO("No problem(end)\n");
 }
 
 static void msm_hsl_start_tx(struct uart_port *port)
 {
 	struct msm_hsl_port *msm_hsl_port = UART_TO_MSM(port);
+
+	HSLDB_INFO("start\n");
 
 	if (port->suspended) {
 		pr_err("%s: System is in Suspend state\n", __func__);
@@ -528,6 +670,8 @@ static void msm_hsl_start_tx(struct uart_port *port)
 	msm_hsl_port->imr |= UARTDM_ISR_TXLEV_BMSK;
 	msm_hsl_write(port, msm_hsl_port->imr,
 		regmap[msm_hsl_port->ver_id][UARTDM_IMR]);
+
+	HSLDB_INFO("No problem(end)\n");
 }
 
 static void msm_hsl_stop_rx(struct uart_port *port)
@@ -538,6 +682,7 @@ static void msm_hsl_stop_rx(struct uart_port *port)
 			       UARTDM_ISR_RXSTALE_BMSK);
 	msm_hsl_write(port, msm_hsl_port->imr,
 		regmap[msm_hsl_port->ver_id][UARTDM_IMR]);
+	HSLDB_INFO("No problem(end) rx_imr=%d\n",msm_hsl_port->imr);
 }
 
 static void msm_hsl_enable_ms(struct uart_port *port)
@@ -616,6 +761,7 @@ static void handle_rx(struct uart_port *port, unsigned int misr)
 	}
 
 	tty_flip_buffer_push(tty->port);
+	HSLDB_INFO("No problem(end) misr=%d  vid =%d\n",misr,vid);
 }
 
 static void handle_tx(struct uart_port *port)
@@ -626,9 +772,14 @@ static void handle_tx(struct uart_port *port)
 	int x;
 	unsigned int tf_pointer = 0;
 	unsigned int vid;
+#if defined(CONFIG_SERIAL_EXPAND_DEBUG_FUNCTION_SH)
+	struct msm_hsl_port *msm_hsl_port = UART_TO_MSM(port);
+#endif	/* CONFIG_SERIAL_EXPAND_DEBUG_FUNCTION_SH */
 
 	vid = UART_TO_MSM(port)->ver_id;
 	tx_count = uart_circ_chars_pending(xmit);
+
+	HSLDB_INFO("tx_count=%d vid=%d start\n",tx_count,vid);
 
 	if (tx_count > (UART_XMIT_SIZE - xmit->tail))
 		tx_count = UART_XMIT_SIZE - xmit->tail;
@@ -696,6 +847,7 @@ static void handle_tx(struct uart_port *port)
 	if (uart_circ_chars_pending(xmit) < WAKEUP_CHARS)
 		uart_write_wakeup(port);
 
+	HSLDB_INFO("No problem(end)\n");
 }
 
 static void handle_delta_cts(struct uart_port *port)
@@ -901,6 +1053,12 @@ static void msm_hsl_set_baud_rate(struct uart_port *port,
 		break;
 	}
 
+#ifdef CONFIG_SHIRDA
+	if (msm_hsl_port->use_irda) {
+		rxstale = 1;
+	}
+#endif
+
 	vid = msm_hsl_port->ver_id;
 	msm_hsl_write(port, baud_code, regmap[vid][UARTDM_CSR]);
 
@@ -985,6 +1143,7 @@ static int msm_hsl_startup(struct uart_port *port)
 	int ret;
 	unsigned long flags;
 
+	HSLDB_INFO("ttyHSL(port=%d) start\n", port->line);
 	snprintf(msm_hsl_port->name, sizeof(msm_hsl_port->name),
 		 "msm_serial_hsl%d", port->line);
 
@@ -1004,6 +1163,9 @@ static int msm_hsl_startup(struct uart_port *port)
 				goto release_wakelock;
 			}
 		}
+#ifdef CONFIG_SERIAL_CUST_SH
+		msm_hsl_pinctrl_select(port, true);
+#endif /* CONFIG_SERIAL_CUST_SH */
 	}
 
 	/*
@@ -1032,15 +1194,19 @@ static int msm_hsl_startup(struct uart_port *port)
 	if (unlikely(ret)) {
 		pr_err("failed to request_irq\n");
 		msm_hsl_unconfig_uart_gpios(port);
+#ifdef CONFIG_SERIAL_CUST_SH
+		msm_hsl_pinctrl_select(port, false);
+#endif /* CONFIG_SERIAL_CUST_SH */
 		goto release_wakelock;
 	}
 
+	HSLDB_INFO("No problem(end)\n");
 	return ret;
 
 release_wakelock:
 	if (pdata && pdata->use_pm)
 		wake_unlock(&msm_hsl_port->port_open_wake_lock);
-
+	HSLDB_INFO("No problem(release_wakelock)\n");
 	return ret;
 }
 
@@ -1050,6 +1216,8 @@ static void msm_hsl_shutdown(struct uart_port *port)
 	struct platform_device *pdev = to_platform_device(port->dev);
 	const struct msm_serial_hslite_platform_data *pdata =
 					pdev->dev.platform_data;
+
+	HSLDB_INFO("ttyHSL(port=%d) start\n", port->line);
 
 	msm_hsl_port->imr = 0;
 	/* disable interrupts */
@@ -1063,9 +1231,14 @@ static void msm_hsl_shutdown(struct uart_port *port)
 		if (pdata && pdata->config_gpio)
 			msm_hsl_unconfig_uart_gpios(port);
 
+#ifdef CONFIG_SERIAL_CUST_SH
+		msm_hsl_pinctrl_select(port, false);
+#endif /* CONFIG_SERIAL_CUST_SH */
+
 		if (pdata && pdata->use_pm)
 			wake_unlock(&msm_hsl_port->port_open_wake_lock);
 	}
+	HSLDB_INFO("No problem(end)\n");
 }
 
 static void msm_hsl_set_termios(struct uart_port *port,
@@ -1345,6 +1518,17 @@ static struct msm_hsl_port msm_hsl_uart_ports[] = {
 			.line = 2,
 		},
 	},
+#if defined(CONFIG_SERIAL_EXPAND_PORT_SH)
+	{
+		.uart = {
+			.iotype = UPIO_MEM,
+			.ops = &msm_hsl_uart_pops,
+			.flags = UPF_BOOT_AUTOCONF,
+			.fifosize = 64,
+			.line = 3,
+		},
+	},
+#endif	/* defined(CONFIG_SERIAL_EXPAND_PORT_SH) */
 };
 
 #define UART_NR	ARRAY_SIZE(msm_hsl_uart_ports)
@@ -1710,6 +1894,8 @@ static int msm_serial_hsl_probe(struct platform_device *pdev)
 	else
 		line = pdev->id;
 
+	HSLDB_INFO(" ttyHSL(port=%d)\n",line);
+
 	/* Use line number from device tree alias if present */
 	if (pdev->dev.of_node) {
 		dev_dbg(&pdev->dev, "device tree enabled\n");
@@ -1763,6 +1949,11 @@ static int msm_serial_hsl_probe(struct platform_device *pdev)
 		msm_hsl_port->func_mode = UART_FOUR_WIRE;
 	else
 		msm_hsl_port->func_mode = UART_TWO_WIRE;
+#ifdef CONFIG_SERIAL_CUST_SH
+	msm_hsl_pinctrl_init(pdev,msm_hsl_port);
+#endif /* CONFIG_SERIAL_CUST_SH */
+
+	HSLDB_INFO("func_mode = %d\n",msm_hsl_port->func_mode);
 
 	match = of_match_device(msm_hsl_match_table, &pdev->dev);
 	if (!match) {
@@ -1789,6 +1980,17 @@ static int msm_serial_hsl_probe(struct platform_device *pdev)
 			}
 		}
 	}
+
+#ifdef CONFIG_SHIRDA
+	if (pdev->dev.of_node) {
+		msm_hsl_port->use_irda = of_property_read_bool(	
+			pdev->dev.of_node,
+			"qcom,use-irda"
+		);
+	} else {
+		msm_hsl_port->use_irda = false;	
+	}
+#endif	
 
 	gsbi_resource =	platform_get_resource_byname(pdev,
 						     IORESOURCE_MEM,
@@ -1837,12 +2039,15 @@ static int msm_serial_hsl_probe(struct platform_device *pdev)
 	/* Temporarily increase the refcount on the GSBI clock to avoid a race
 	 * condition with the earlyprintk handover mechanism.
 	 */
-	if (msm_hsl_port->pclk)
+	if (msm_hsl_port->pclk){
+		HSLDB_INFO("Clock_Enable\n");
 		clk_prepare_enable(msm_hsl_port->pclk);
+	}
 	ret = uart_add_one_port(&msm_hsl_uart_driver, port);
 	if (msm_hsl_port->pclk)
 		clk_disable_unprepare(msm_hsl_port->pclk);
 
+	HSLDB_INFO("No problem(end)\n");
 err:
 	return ret;
 }

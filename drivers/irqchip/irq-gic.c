@@ -52,6 +52,10 @@
 
 #include "irqchip.h"
 
+#ifdef CONFIG_SH_SLEEP_LOG
+#include <sharp/sh_sleeplog.h>
+#endif /* CONFIG_SH_SLEEP_LOG */
+
 union gic_base {
 	void __iomem *common_base;
 	void __percpu __iomem **percpu_base;
@@ -307,8 +311,10 @@ static void gic_show_resume_irq(struct gic_chip_data *gic)
 	u32 pending[32];
 	void __iomem *base = gic_data_dist_base(gic);
 
+#ifndef CONFIG_SH_SLEEP_LOG
 	if (!msm_show_resume_irq_mask)
 		return;
+#endif /* CONFIG_SH_SLEEP_LOG */
 
 	raw_spin_lock(&irq_controller_lock);
 	for (i = 0; i * 32 < gic->gic_irqs; i++) {
@@ -329,8 +335,15 @@ static void gic_show_resume_irq(struct gic_chip_data *gic)
 		else if (desc->action && desc->action->name)
 			name = desc->action->name;
 
+#ifdef CONFIG_SH_SLEEP_LOG
+		sh_count_gic_counter(i + gic->irq_offset);
+		if (msm_show_resume_irq_mask)
+			pr_warning("%s: %d triggered", __func__,
+				i + gic->irq_offset);
+#else /* CONFIG_SH_SLEEP_LOG */
 		pr_warning("%s: %d triggered %s\n", __func__,
 					i + gic->irq_offset, name);
+#endif /* CONFIG_SH_SLEEP_LOG */
 	}
 }
 

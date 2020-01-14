@@ -26,6 +26,10 @@
 #include <linux/input.h>
 #include <linux/time.h>
 
+#ifdef CONFIG_SHSYS_CUST
+#include <sharp/shdisp_kerl.h>
+#endif /* CONFIG_SHSYS_CUST */
+
 struct cpu_sync {
 	struct task_struct *thread;
 	wait_queue_head_t sync_wq;
@@ -381,6 +385,34 @@ static void do_input_boost(struct work_struct *work)
 					msecs_to_jiffies(input_boost_ms));
 }
 
+#ifdef CONFIG_SHSYS_CUST
+static int is_ignorable_event(struct input_handle *handle,
+		unsigned int type, unsigned int code, int value)
+{
+	struct input_dev *dev = handle->dev;
+
+	if (shdisp_api_get_main_disp_status() == SHDISP_MAIN_DISP_OFF) {
+		if (((type == EV_KEY) && (code == KEY_POWER) && (value == 1))	||
+			((type == EV_KEY) && (code == KEY_HOME) && (value == 1))	||
+			((type == EV_KEY) && (code == KEY_SEND) && (value == 1))	||
+			((type == EV_KEY) && (code == KEY_MAIL) && (value == 1))	||
+			((type == EV_KEY) && (code == KEY_BUZZER) && (value == 1))	||
+#ifdef CONFIG_TOUCHSCREEN_SHTPS
+			((type == EV_KEY) && (code == KEY_DOUBLETAP))				||
+#endif
+			((type == EV_ABS) && (code == ABS_DISTANCE) && (value == 7))||
+			((type == EV_SW)  && (code == SW_LID) && (value == 0))		||
+			(!strcmp(dev->name, "shub_ex_notify") && (type == EV_ABS) && (code == ABS_Y) && (value & 0x100)) ||
+			((type == EV_SW)  && (code == SW_CAMERA_LENS_COVER) && (value == 0))) {
+			pr_debug("start clock boosted by input event dev_name = %s type = %d code = %d value = %d disp_status = %d\n", dev->name, type, code, value, shdisp_api_get_main_disp_status());
+			return false;
+		}
+	}
+	pr_debug("ignore input event dev_name = %s type = %d code = %d value = %d disp_status = %d\n", dev->name, type, code, value, shdisp_api_get_main_disp_status());
+	return true;
+}
+#endif /* CONFIG_SHSYS_CUST */
+
 static void cpuboost_input_event(struct input_handle *handle,
 		unsigned int type, unsigned int code, int value)
 {
@@ -393,6 +425,10 @@ static void cpuboost_input_event(struct input_handle *handle,
 	if (now - last_input_time < MIN_INPUT_INTERVAL)
 		return;
 
+#ifdef CONFIG_SHSYS_CUST
+	if (is_ignorable_event(handle, type, code, value))
+		return;
+#endif /* CONFIG_SHSYS_CUST */
 	if (work_pending(&input_boost_work))
 		return;
 
@@ -460,6 +496,38 @@ static const struct input_device_id cpuboost_ids[] = {
 		.flags = INPUT_DEVICE_ID_MATCH_EVBIT,
 		.evbit = { BIT_MASK(EV_KEY) },
 	},
+#ifdef CONFIG_SHSYS_CUST
+	/* proximity sensor */
+	{
+		.flags = INPUT_DEVICE_ID_MATCH_EVBIT |
+			INPUT_DEVICE_ID_MATCH_ABSBIT,
+		.evbit = { BIT_MASK(EV_ABS) },
+		.absbit = { [BIT_WORD(ABS_DISTANCE)] =
+			BIT_MASK(ABS_DISTANCE) },
+	},
+	/* cover */
+	{
+		.flags = INPUT_DEVICE_ID_MATCH_EVBIT |
+			INPUT_DEVICE_ID_MATCH_SWBIT,
+		.evbit = { BIT_MASK(EV_SW) },
+		.swbit = { BIT_MASK(SW_LID) },
+	},
+	/* pick up */
+	{
+		.flags = INPUT_DEVICE_ID_MATCH_EVBIT |
+			INPUT_DEVICE_ID_MATCH_ABSBIT,
+		.evbit = { BIT_MASK(EV_ABS) },
+		.absbit = { [BIT_WORD( ABS_Y)] =
+			BIT_MASK( ABS_Y) },
+	},
+	/* camera cover */
+	{
+		.flags = INPUT_DEVICE_ID_MATCH_EVBIT |
+			INPUT_DEVICE_ID_MATCH_SWBIT,
+		.evbit = { BIT_MASK(EV_SW) },
+		.swbit = { BIT_MASK(SW_CAMERA_LENS_COVER) },
+	},
+#endif /* CONFIG_SHSYS_CUST */
 	{ },
 };
 

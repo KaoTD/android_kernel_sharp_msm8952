@@ -567,10 +567,7 @@ config SND_SOC_ML26124
 	tristate
 
 config SND_SOC_TPA6130A2
-	bool "headphone pa TPA6130A2"
-	default n
-	help
-	It is for TPA6130A2
+	tristate
 
 config SND_SOC_MSM_STUB
 	tristate

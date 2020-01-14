@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012-2015, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2012-2016, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -224,8 +224,13 @@ struct mdss_mdp_ctl_intfs_ops {
 					struct mdss_mdp_vsync_handler *);
 	int (*config_fps_fnc)(struct mdss_mdp_ctl *ctl, int new_fps);
 	int (*restore_fnc)(struct mdss_mdp_ctl *ctl);
-	int (*config_mipiclk_fnc)(struct mdss_mdp_ctl *,
-					struct mdp_update_mipiclk *);
+
+	/*
+	 * reconfigure interface for new resolution, called before (pre=1)
+	 * and after interface has been reconfigured (pre=0)
+	 */
+	int (*reconfigure)(struct mdss_mdp_ctl *ctl,
+			enum dynamic_switch_modes mode, bool pre);
 };
 
 struct mdss_mdp_ctl {
@@ -303,10 +308,7 @@ struct mdss_mdp_ctl {
 	bool force_ctl_start;
 
 	u16 frame_rate;
-
-	bool mipiclk_pending;
-	struct mdp_update_mipiclk request_mipiclk;
-	struct mutex mipiclk_lock;
+	int pending_mode_switch;
 };
 
 struct mdss_mdp_mixer {
@@ -594,6 +596,17 @@ struct mdss_overlay_private {
 	u32 cursor_ndx[2];
 	bool dyn_mode_switch; /* Used in prepare, bw calc for new mode */
 	u32 hist_events;
+
+#ifdef	CONFIG_SHDISP /* CUST_ID_00057 */
+	int fpslow_count;
+#endif /* CONFIG_SHDISP */
+#ifdef CONFIG_SHDISP /* CUST_ID_00063 */
+	struct mutex trans_ctrl_lock;
+#endif /* CONFIG_SHDISP */
+#ifdef	CONFIG_SHDISP /* CUST_ID_00064 */
+	int dfps_pause;
+	char dfps_req_rate;
+#endif /* CONFIG_SHDISP */
 };
 
 struct mdss_mdp_set_ot_params {
@@ -1039,6 +1052,8 @@ int mdss_mdp_mixer_pipe_unstage(struct mdss_mdp_pipe *pipe,
 void mdss_mdp_mixer_unstage_all(struct mdss_mdp_mixer *mixer);
 int mdss_mdp_display_commit(struct mdss_mdp_ctl *ctl, void *arg,
 	struct mdss_mdp_commit_cb *commit_cb);
+int mdss_mdp_display_commit_pp_post_vsync(struct mdss_mdp_ctl *ctl, void *arg,
+	struct mdss_mdp_commit_cb *commit_cb);
 int mdss_mdp_display_wait4comp(struct mdss_mdp_ctl *ctl);
 int mdss_mdp_display_wait4pingpong(struct mdss_mdp_ctl *ctl, bool use_lock);
 int mdss_mdp_display_wakeup_time(struct mdss_mdp_ctl *ctl,
@@ -1048,6 +1063,14 @@ int mdss_mdp_csc_setup(u32 block, u32 blk_idx, u32 csc_type);
 int mdss_mdp_csc_setup_data(u32 block, u32 blk_idx, struct mdp_csc_cfg *data);
 
 int mdss_mdp_pp_init(struct device *dev);
+#ifdef CONFIG_SHDISP /* CUST_ID_00043 */
+int mdss_mdp_pp_argc_init(void);
+int mdss_mdp_pp_igc_init(void);
+#endif /* CONFIG_SHDISP */
+#ifdef CONFIG_SHDISP /* CUST_ID_00071 */
+void mdss_mdp_latency_deny_collapse(void);
+void mdss_mdp_latency_allow_collapse(void);
+#endif /* CONFIG_SHDISP */
 void mdss_mdp_pp_term(struct device *dev);
 int mdss_mdp_pp_overlay_init(struct msm_fb_data_type *mfd);
 
@@ -1069,6 +1092,10 @@ int mdss_mdp_pcc_config(struct mdp_pcc_cfg_data *cfg_ptr, u32 *copyback);
 int mdss_pp_dirty_flags_config(struct mdp_dirty_flag_cfg *config);
 int mdss_mdp_igc_lut_config(struct mdp_igc_lut_data *config, u32 *copyback,
 				u32 copy_from_kernel);
+#ifdef CONFIG_SHDISP /* CUST_ID_00042 */
+int mdss_mdp_specified_igc_lut_config(struct mdp_specified_igc_lut_data *config);
+int mdss_mdp_specified_argc_lut_config(struct mdp_specified_pgc_lut_data *config);
+#endif /* CONFIG_SHDISP */
 int mdss_mdp_argc_config(struct mdp_pgc_lut_data *config, u32 *copyback);
 int mdss_mdp_hist_lut_config(struct mdp_hist_lut_data *config, u32 *copyback);
 int mdss_mdp_dither_config(struct mdp_dither_cfg_data *config, u32 *copyback);
@@ -1170,7 +1197,6 @@ int mdss_mdp_calib_config(struct mdp_calib_config_data *cfg, u32 *copyback);
 int mdss_mdp_calib_config_buffer(struct mdp_calib_config_buffer *cfg,
 						u32 *copyback);
 int mdss_mdp_ctl_update_fps(struct mdss_mdp_ctl *ctl);
-int mdss_mdp_ctl_update_mipiclk(struct mdss_mdp_ctl *ctl);
 int mdss_mdp_pipe_is_staged(struct mdss_mdp_pipe *pipe);
 int mdss_mdp_writeback_display_commit(struct mdss_mdp_ctl *ctl, void *arg);
 struct mdss_mdp_ctl *mdss_mdp_ctl_mixer_switch(struct mdss_mdp_ctl *ctl,
@@ -1193,5 +1219,10 @@ int mdss_mdp_cmd_set_autorefresh_mode(struct mdss_mdp_ctl *ctl,
 		int frame_cnt);
 int mdss_mdp_ctl_cmd_autorefresh_enable(struct mdss_mdp_ctl *ctl,
 		int frame_cnt);
+
+#ifdef CONFIG_SHDISP /* CUST_ID_00036 */
+void mdss_mdp_ctl_perf_update_ctl(struct mdss_mdp_ctl *ctl,
+					int params_changed);
+#endif /* CONFIG_SHDISP */
 
 #endif /* MDSS_MDP_H */

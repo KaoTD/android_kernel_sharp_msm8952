@@ -1,4 +1,4 @@
-/* Copyright (c) 2011-2015, 2017 The Linux Foundation. All rights reserved.
+/* Copyright (c) 2011-2017, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -650,8 +650,8 @@ static void process_build_mask_report(uint8_t *buf, uint32_t len,
 void diag_cntl_process_read_data(struct diagfwd_info *p_info, void *buf,
 				 int len)
 {
-	int read_len = 0;
-	int header_len = sizeof(struct diag_ctrl_pkt_header_t);
+	uint32_t read_len = 0;
+	uint32_t header_len = sizeof(struct diag_ctrl_pkt_header_t);
 	uint8_t *ptr = buf;
 	struct diag_ctrl_pkt_header_t *ctrl_pkt = NULL;
 
@@ -1258,8 +1258,6 @@ int diag_send_buffering_wm_values(uint8_t peripheral,
 
 int diagfwd_cntl_init(void)
 {
-	uint8_t peripheral;
-
 	reg_dirty = 0;
 	driver->polling_reg_flag = 0;
 	driver->log_on_demand_support = 1;
@@ -1275,12 +1273,17 @@ int diagfwd_cntl_init(void)
 	if (!driver->cntl_wq)
 		return -ENOMEM;
 
+	return 0;
+}
+
+void diagfwd_cntl_channel_init(void)
+{
+	uint8_t peripheral;
+
 	for (peripheral = 0; peripheral < NUM_PERIPHERALS; peripheral++) {
 		diagfwd_early_open(peripheral);
 		diagfwd_open(peripheral, TYPE_CNTL);
 	}
-
-	return 0;
 }
 
 void diagfwd_cntl_exit(void)

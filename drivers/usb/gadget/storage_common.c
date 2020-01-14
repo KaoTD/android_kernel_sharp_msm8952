@@ -409,11 +409,20 @@ static struct usb_descriptor_header *fsg_ss_function[] = {
 	NULL,
 };
 
+#ifdef CONFIG_USB_ANDROID_SH_UMS
+/* string descriptors: */
+static struct usb_string fsg_strings[] = {
+	/* msc_iInterface declared in sh_string.c */
+	[0].s = msc_iInterface,
+	{  } /* end of list */
+};
+#else /* CONFIG_USB_ANDROID_SH_UMS */
 /* Static strings, in UTF-8 (for simplicity we use only ASCII characters) */
 static struct usb_string		fsg_strings[] = {
 	{FSG_STRING_INTERFACE,		fsg_string_interface},
 	{}
 };
+#endif /* CONFIG_USB_ANDROID_SH_UMS */
 
 static struct usb_gadget_strings	fsg_stringtab = {
 	.language	= 0x0409,		/* en-us */

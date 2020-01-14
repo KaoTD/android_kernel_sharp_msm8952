@@ -40,6 +40,10 @@
 
 #include <trace/events/exception.h>
 
+#ifdef CONFIG_SHLOG_SYSTEM
+#include "sharp/shrlog.h"
+#endif /* CONFIG_SHLOG_SYSTEM */
+
 static const char *fault_name(unsigned int esr);
 
 /*
@@ -126,6 +130,9 @@ static void __do_user_fault(struct task_struct *tsk, unsigned long addr,
 			addr, esr);
 		show_pte(tsk->mm, addr);
 		show_regs(regs);
+ #ifdef CONFIG_SHLOG_SYSTEM
+		rlog_app_start( tsk, addr, esr, sig, code, regs );
+#endif /* CONFIG_SHLOG_SYSTEM */
 	}
 
 	tsk->thread.fault_address = addr;
@@ -178,7 +185,8 @@ static int __do_page_fault(struct mm_struct *mm, unsigned long addr,
 good_area:
 	/*
 	 * Check that the permissions on the VMA allow for the fault which
-	 * occurred.
+	 * occurred. If we encountered a write or exec fault, we must have
+	 * appropriate permissions, otherwise we allow any permission.
 	 */
 	if (!(vma->vm_flags & vm_flags)) {
 		fault = VM_FAULT_BADACCESS;
@@ -200,7 +208,7 @@ static int __kprobes do_page_fault(unsigned long addr, unsigned int esr,
 	struct task_struct *tsk;
 	struct mm_struct *mm;
 	int fault, sig, code;
-	unsigned long vm_flags = VM_READ | VM_WRITE;
+	unsigned long vm_flags = VM_READ | VM_WRITE | VM_EXEC;
 	unsigned int mm_flags = FAULT_FLAG_ALLOW_RETRY | FAULT_FLAG_KILLABLE;
 
 	tsk = current;
@@ -222,7 +230,8 @@ static int __kprobes do_page_fault(unsigned long addr, unsigned int esr,
 
 	if (esr & ESR_LNX_EXEC) {
 		vm_flags = VM_EXEC;
-	} else if (esr & ESR_EL1_WRITE) {
+	} else if (((esr & ESR_EL1_WRITE) && !(esr & ESR_EL1_CM)) ||
+			((esr & ESR_EL1_CM) && !(mm_flags & FAULT_FLAG_USER))) {
 		vm_flags = VM_WRITE;
 		mm_flags |= FAULT_FLAG_WRITE;
 	}
@@ -282,6 +291,7 @@ retry:
 			 * starvation.
 			 */
 			mm_flags &= ~FAULT_FLAG_ALLOW_RETRY;
+			mm_flags |= FAULT_FLAG_TRIED;
 			goto retry;
 		}
 	}

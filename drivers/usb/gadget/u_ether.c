@@ -1360,7 +1360,9 @@ static int eth_stop(struct net_device *net)
 
 /*-------------------------------------------------------------------------*/
 
+#ifdef CONFIG_USB_ANDROID_SH_CUST
 static u8 host_ethaddr[ETH_ALEN];
+#endif /* CONFIG_USB_ANDROID_SH_CUST */
 
 /* initial value, changed by "ifconfig usb0 hw ether xx:xx:xx:xx:xx:xx" */
 static char *dev_addr;
@@ -1395,6 +1397,7 @@ static int get_ether_addr(const char *str, u8 *dev_addr)
 
 static int ether_ioctl(struct net_device *, struct ifreq *, int);
 
+#ifdef CONFIG_USB_ANDROID_SH_CUST
 static int get_host_ether_addr(u8 *str, u8 *dev_addr)
 {
 	memcpy(dev_addr, str, ETH_ALEN);
@@ -1405,6 +1408,7 @@ static int get_host_ether_addr(u8 *str, u8 *dev_addr)
 	memcpy(str, dev_addr, ETH_ALEN);
 	return 1;
 }
+#endif /* CONFIG_USB_ANDROID_SH_CUST */
 
 static const struct net_device_ops eth_netdev_ops = {
 	.ndo_open		= eth_open,
@@ -1656,12 +1660,16 @@ struct eth_dev *gether_setup_name(struct usb_gadget *g, u8 ethaddr[ETH_ALEN],
 	if (get_ether_addr(dev_addr, net->dev_addr))
 		dev_warn(&g->dev,
 			"using random %s ethernet address\n", "self");
-
+#ifdef CONFIG_USB_ANDROID_SH_CUST
 	if (get_host_ether_addr(host_ethaddr, dev->host_mac))
 		dev_warn(&g->dev, "using random %s ethernet address\n", "host");
 	else
 		dev_warn(&g->dev, "using previous %s ethernet address\n", "host");
-
+#else /* CONFIG_USB_ANDROID_SH_CUST */
+	if (get_ether_addr(host_addr, dev->host_mac))
+		dev_warn(&g->dev,
+			"using random %s ethernet address\n", "host");
+#endif /* CONFIG_USB_ANDROID_SH_CUST */
 	if (ethaddr)
 		memcpy(ethaddr, dev->host_mac, ETH_ALEN);
 
@@ -1682,8 +1690,10 @@ struct eth_dev *gether_setup_name(struct usb_gadget *g, u8 ethaddr[ETH_ALEN],
 		free_netdev(net);
 		dev = ERR_PTR(status);
 	} else {
+#ifdef CONFIG_USB_DEBUG_SH_LOG
 		INFO(dev, "MAC %pM\n", net->dev_addr);
 		INFO(dev, "HOST MAC %pM\n", dev->host_mac);
+#endif /* CONFIG_USB_DEBUG_SH_LOG */
 
 		/* two kinds of host-initiated state changes:
 		 *  - iff DATA transfer is active, carrier is "on"

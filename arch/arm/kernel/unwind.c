@@ -151,7 +151,7 @@ static const struct unwind_idx *search_index(unsigned long addr,
 	if (likely(start->addr_offset <= addr_prel31))
 		return start;
 	else {
-		pr_debug("unwind: Unknown symbol address %08lx\n", addr);
+		pr_warning("unwind: Unknown symbol address %08lx\n", addr);
 		return NULL;
 	}
 }
@@ -345,7 +345,7 @@ int unwind_frame(struct stackframe *frame)
 
 	idx = unwind_find_idx(frame->pc);
 	if (!idx) {
-		pr_debug("unwind: Index not found %08lx\n", frame->pc);
+		pr_warning("unwind: Index not found %08lx\n", frame->pc);
 		return -URC_FAILURE;
 	}
 
@@ -489,3 +489,15 @@ void unwind_table_del(struct unwind_table *tab)
 
 	kfree(tab);
 }
+
+#ifdef CONFIG_SHLOG_SYSTEM
+void* get_origin_unwind_addr(void)
+{
+	void* ret_addr = (void*)__origin_unwind_idx;
+	if (unlikely(!ret_addr))
+		ret_addr = (void*)unwind_find_origin(__start_unwind_idx, __stop_unwind_idx);
+	return ret_addr;
+}
+#endif /* CONFIG_SHLOG_SYSTEM */
+
+

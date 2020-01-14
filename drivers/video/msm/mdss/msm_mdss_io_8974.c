@@ -19,6 +19,7 @@
 
 #include "mdss_dsi.h"
 #include "mdss_edp.h"
+#include "mdss_dsi_phy.h"
 
 #define MDSS_DSI_DSIPHY_REGULATOR_CTRL_0	0x00
 #define MDSS_DSI_DSIPHY_REGULATOR_CTRL_1	0x04
@@ -363,6 +364,8 @@ static void mdss_dsi_phy_regulator_ctrl(struct mdss_dsi_ctrl_pdata *ctrl,
 {
 	struct mdss_dsi_ctrl_pdata *other_ctrl;
 	struct dsi_shared_data *sdata;
+	struct mdss_panel_data *pdata;
+	struct mdss_panel_info *pinfo;
 
 	if (!ctrl) {
 		pr_err("%s: Invalid input data\n", __func__);
@@ -371,6 +374,8 @@ static void mdss_dsi_phy_regulator_ctrl(struct mdss_dsi_ctrl_pdata *ctrl,
 
 	sdata = ctrl->shared_data;
 	other_ctrl = mdss_dsi_get_other_ctrl(ctrl);
+	pdata = &ctrl->panel_data;
+	pinfo = &pdata->panel_info;
 
 	mutex_lock(&sdata->phy_reg_lock);
 	if (enable) {
@@ -383,6 +388,8 @@ static void mdss_dsi_phy_regulator_ctrl(struct mdss_dsi_ctrl_pdata *ctrl,
 			 * other dsi controller is still active.
 			 */
 			if (mdss_dsi_is_hw_config_single(sdata) ||
+				(mdss_dsi_is_ctrl_clk_master(ctrl) &&
+					pinfo->ulps_suspend_enabled) ||
 				(other_ctrl && !other_ctrl->is_phyreg_enabled))
 				mdss_dsi_28nm_phy_regulator_enable(ctrl);
 		}
@@ -476,6 +483,21 @@ void mdss_dsi_phy_init(struct mdss_dsi_ctrl_pdata *ctrl)
 	mdss_dsi_phy_regulator_ctrl(ctrl, true);
 	mdss_dsi_phy_ctrl(ctrl, true);
 }
+#ifdef CONFIG_SHDISP /* CUST_ID_00056 */
+
+void mdss_dsi_clkchg_phy_config(struct mdss_dsi_ctrl_pdata *ctrl)
+{
+	if (!ctrl || !ctrl->shared_data) {
+		pr_err("%s: Invalid input data\n", __func__);
+		return;
+	}
+
+	if (ctrl->shared_data->hw_rev == MDSS_DSI_HW_REV_103)
+		mdss_dsi_20nm_phy_config(ctrl);
+	else
+		mdss_dsi_28nm_phy_config(ctrl);
+}
+#endif /* CONFIG_SHDISP */
 
 void mdss_dsi_core_clk_deinit(struct device *dev, struct dsi_shared_data *sdata)
 {
@@ -499,6 +521,76 @@ void mdss_dsi_core_clk_deinit(struct device *dev, struct dsi_shared_data *sdata)
 		devm_clk_put(dev, sdata->tbu_clk);
 	if (sdata->tbu_rt_clk)
 		devm_clk_put(dev, sdata->tbu_rt_clk);
+}
+
+int mdss_dsi_clk_refresh(struct mdss_panel_data *pdata, bool update_phy)
+{
+	struct mdss_dsi_ctrl_pdata *ctrl_pdata = NULL;
+	struct mdss_panel_info *pinfo = NULL;
+	u32 pclk_rate = 0, byte_clk_rate = 0;
+	u8 frame_rate = 0;
+	int rc = 0;
+
+	if (!pdata) {
+		pr_err("%s: invalid panel data\n", __func__);
+		return -EINVAL;
+	}
+
+	ctrl_pdata = container_of(pdata, struct mdss_dsi_ctrl_pdata,
+							panel_data);
+	pinfo = &pdata->panel_info;
+
+	if (!ctrl_pdata || !pinfo) {
+		pr_err("%s: invalid ctrl data\n", __func__);
+		return -EINVAL;
+	}
+
+	/* Back-up current values for error cases */
+	frame_rate = pinfo->mipi.frame_rate;
+	pclk_rate = ctrl_pdata->pclk_rate;
+	byte_clk_rate = ctrl_pdata->byte_clk_rate;
+
+	if (update_phy) {
+		pinfo->mipi.frame_rate = mdss_panel_calc_frame_rate(pinfo);
+		pr_debug("%s: new frame rate %d\n",
+				__func__, pinfo->mipi.frame_rate);
+	}
+
+	rc = mdss_dsi_clk_div_config(&pdata->panel_info,
+			pdata->panel_info.mipi.frame_rate);
+	if (rc) {
+		pr_err("%s: unable to initialize the clk dividers\n",
+								__func__);
+		goto error;
+	}
+	ctrl_pdata->pclk_rate = pdata->panel_info.mipi.dsi_pclk_rate;
+	ctrl_pdata->byte_clk_rate = pdata->panel_info.clk_rate / 8;
+	pr_debug("%s ctrl_pdata->byte_clk_rate=%d ctrl_pdata->pclk_rate=%d\n",
+		__func__, ctrl_pdata->byte_clk_rate, ctrl_pdata->pclk_rate);
+
+	if (update_phy) {
+		/* phy panel timing calaculation */
+		mdss_dsi_get_phy_revision(ctrl_pdata);
+		rc = mdss_dsi_phy_calc_timing_param(pinfo,
+				ctrl_pdata->shared_data->phy_rev,
+				pinfo->mipi.frame_rate);
+		if (rc) {
+			pr_err("Error in calculating phy timings\n");
+			goto error;
+		}
+		ctrl_pdata->update_phy_timing = false;
+	}
+
+	ctrl_pdata->refresh_clk_rate = false;
+	return 0;
+
+error:
+	/* Restore previous values before exiting */
+	pinfo->mipi.frame_rate = frame_rate;
+	ctrl_pdata->pclk_rate = pclk_rate;
+	ctrl_pdata->byte_clk_rate = byte_clk_rate;
+	ctrl_pdata->refresh_clk_rate = false;
+	return rc;
 }
 
 int mdss_dsi_core_clk_init(struct platform_device *pdev,
@@ -1087,6 +1179,67 @@ static void mdss_dsi_link_clk_stop(struct mdss_dsi_ctrl_pdata *ctrl)
 	mdss_dsi_link_clk_unprepare(ctrl);
 }
 
+static bool mdss_dsi_is_ulps_req_valid(struct mdss_dsi_ctrl_pdata *ctrl,
+		int enable)
+{
+	struct mdss_dsi_ctrl_pdata *octrl = NULL;
+	struct mdss_panel_data *pdata = &ctrl->panel_data;
+	struct mdss_panel_info *pinfo = &pdata->panel_info;
+
+	pr_debug("%s: checking ulps req validity for ctrl%d\n",
+		__func__, ctrl->ndx);
+
+	if (!mdss_dsi_ulps_feature_enabled(pdata) &&
+			!pinfo->ulps_suspend_enabled) {
+		pr_debug("%s: ULPS feature is not enabled\n", __func__);
+		return false;
+	}
+
+	/*
+	 * No need to enter ULPS when transitioning from splash screen to
+	 * boot animation since it is expected that the clocks would be turned
+	 * right back on.
+	 */
+	if (enable && pinfo->cont_splash_enabled) {
+		pr_debug("%s: skip ULPS config with splash screen enabled\n",
+			__func__);
+		return false;
+	}
+
+	/*
+	 * No need to enable ULPS if panel is not yet initialized.
+	 * However, this should be allowed in following usecases:
+	 *   1. If ULPS during suspend feature is enabled, where we
+	 *      configure the lanes in ULPS after turning off the panel.
+	 *   2. When coming out of idle PC with clamps enabled, where we
+	 *      transition the controller HW state back to ULPS prior to
+	 *      disabling ULPS.
+	 */
+	if (enable && !ctrl->mmss_clamp &&
+		!(ctrl->ctrl_state & CTRL_STATE_PANEL_INIT) &&
+		!pdata->panel_info.ulps_suspend_enabled) {
+		pr_debug("%s: panel not yet initialized\n", __func__);
+		return false;
+	}
+
+	/*
+	 * For split-DSI usecase, wait till both controllers are initialized.
+	 * The same exceptions as above are applicable here too.
+	 */
+	if (mdss_dsi_is_hw_config_split(ctrl->shared_data)) {
+		octrl = mdss_dsi_get_other_ctrl(ctrl);
+		if (enable && !ctrl->mmss_clamp && octrl &&
+			!(octrl->ctrl_state & CTRL_STATE_PANEL_INIT) &&
+			!pdata->panel_info.ulps_suspend_enabled) {
+			pr_debug("%s: split-DSI, other ctrl not ready yet\n",
+				__func__);
+			return false;
+		}
+	}
+
+	return true;
+}
+
 /**
  * mdss_dsi_ulps_config() - Program DSI lanes to enter/exit ULPS mode
  * @ctrl: pointer to DSI controller structure
@@ -1119,21 +1272,9 @@ static int mdss_dsi_ulps_config(struct mdss_dsi_ctrl_pdata *ctrl,
 	pinfo = &pdata->panel_info;
 	mipi = &pinfo->mipi;
 
-	if (!mdss_dsi_ulps_feature_enabled(pdata) &&
-		!pinfo->ulps_suspend_enabled) {
-		pr_debug("%s: ULPS feature not supported. enable=%d\n",
-			__func__, enable);
-		return -ENOTSUPP;
-	}
-
-	/*
-	 * No need to enter ULPS when transitioning from splash screen to
-	 * boot animation since it is expected that the clocks would be turned
-	 * right back on.
-	 */
-	if (pinfo->cont_splash_enabled) {
-		pr_debug("%s: skip ULPS config with splash screen enabled\n",
-			__func__);
+	if (!mdss_dsi_is_ulps_req_valid(ctrl, enable)) {
+		pr_debug("%s: skiping ULPS config for ctrl%d, enable=%d\n",
+			__func__, ctrl->ndx, enable);
 		return 0;
 	}
 
@@ -1152,11 +1293,31 @@ static int mdss_dsi_ulps_config(struct mdss_dsi_ctrl_pdata *ctrl,
 	if (mipi->data_lane3)
 		active_lanes |= BIT(3);
 
-	pr_debug("%s: configuring ulps (%s) for ctrl%d, active lanes=0x%08x\n",
+	pr_debug("%s: configuring ulps (%s) for ctrl%d, active lanes=0x%08x,clamps=%s\n",
 		__func__, (enable ? "on" : "off"), ctrl->ndx,
-		active_lanes);
+		active_lanes, ctrl->mmss_clamp ? "enabled" : "disabled");
 
 	if (enable && !ctrl->ulps) {
+		/*
+		 * Ensure that the lanes are idle prior to placing a ULPS entry
+		 * request. This is needed to ensure that there is no overlap
+		 * between any HS or LP commands being sent out on the lane and
+		 * a potential ULPS entry request.
+		 *
+		 * This check needs to be avoided when we are resuming from idle
+		 * power collapse and just restoring the controller state to
+		 * ULPS with the clamps still in place.
+		 */
+		if (!ctrl->mmss_clamp) {
+			ret = mdss_dsi_wait_for_lane_idle(ctrl);
+			if (ret) {
+				pr_warn("%s: lanes not idle, skip ulps\n",
+					__func__);
+				ret = 0;
+				goto error;
+			}
+		}
+
 		/*
 		 * ULPS Entry Request.
 		 * Wait for a short duration to ensure that the lanes
@@ -1446,6 +1607,15 @@ static int mdss_dsi_core_power_ctrl(struct mdss_dsi_ctrl_pdata *ctrl,
 			rc = mdss_dsi_clamp_ctrl(ctrl, 1);
 			if (rc)
 				pr_err("%s: Failed to enable dsi clamps. rc=%d\n",
+					__func__, rc);
+		} else {
+			/*
+			 * Make sure that controller is not in ULPS state when
+			 * the DSI link is not active.
+			 */
+			rc = mdss_dsi_ulps_config(ctrl, 0);
+			if (rc)
+				pr_err("%s: failed to disable ulps. rc=%d\n",
 					__func__, rc);
 		}
 

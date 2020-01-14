@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2015, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2016, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -91,6 +91,9 @@ enum dsi_panel_bl_ctrl {
 	BL_PWM,
 	BL_WLED,
 	BL_DCS_CMD,
+#ifdef CONFIG_SHDISP /* CUST_ID_00016 */
+	BL_EXT,
+#endif /* CONFIG_SHDISP */
 	UNKNOWN_CTRL,
 };
 
@@ -320,6 +323,18 @@ struct dsi_panel_cmds {
 	int link_state;
 };
 
+struct dsi_panel_timing {
+	struct mdss_panel_timing timing;
+	uint32_t phy_timing[12];
+	uint32_t phy_timing_8996[40];
+	/* DSI_CLKOUT_TIMING_CTRL */
+	char t_clk_post;
+	char t_clk_pre;
+	struct dsi_panel_cmds on_cmds;
+	struct dsi_panel_cmds post_panel_on_cmds;
+	struct dsi_panel_cmds switch_cmds;
+};
+
 struct dsi_kickoff_action {
 	struct list_head act_entry;
 	void (*action) (void *);
@@ -366,9 +381,6 @@ struct mdss_dsi_ctrl_pdata {
 	int (*check_read_status) (struct mdss_dsi_ctrl_pdata *pdata);
 	int (*cmdlist_commit)(struct mdss_dsi_ctrl_pdata *ctrl, int from_mdp);
 	void (*switch_mode) (struct mdss_panel_data *pdata, int mode);
-	int (*touchscreen_enable) (struct mdss_panel_data *pdata, int enable);
-	void (*update_info) (struct mdss_panel_data *pdata,
-							struct mdp_update_mipiclk *);
 	struct mdss_panel_data panel_data;
 	unsigned char *ctrl_base;
 	struct dss_io_data ctrl_io;
@@ -426,6 +438,7 @@ struct mdss_dsi_ctrl_pdata {
 	u32 dsi_irq_mask;
 	struct mdss_hw *dsi_hw;
 	struct mdss_intf_recovery *recovery;
+	struct mdss_intf_recovery *mdp_callback;
 
 	struct dsi_panel_cmds on_cmds;
 	struct dsi_panel_cmds post_dms_on_cmds;
@@ -492,11 +505,11 @@ struct mdss_dsi_ctrl_pdata {
 
 	struct workqueue_struct *workq;
 	struct delayed_work dba_work;
+	bool update_phy_timing; /* flag to recalculate PHY timings */
 
-	int panel_vddio_gpio;
-	bool panel_analog_power;
-
-	bool mipiclkchg_control;
+#ifdef CONFIG_SHDISP /* CUST_ID_00055 */
+	int dsi_cmd_clk_cnt;
+#endif /* CONFIG_SHDISP */
 };
 
 struct dsi_status_data {
@@ -527,10 +540,10 @@ int mdss_dsi_clk_ctrl(struct mdss_dsi_ctrl_pdata *ctrl,
 	u8 clk_type, int enable);
 void mdss_dsi_clk_req(struct mdss_dsi_ctrl_pdata *ctrl,
 				int enable);
-void mdss_dsi_pll_relock(struct mdss_dsi_ctrl_pdata *ctrl);
 void mdss_dsi_controller_cfg(int enable,
 				struct mdss_panel_data *pdata);
 void mdss_dsi_sw_reset(struct mdss_dsi_ctrl_pdata *ctrl_pdata, bool restore);
+int mdss_dsi_wait_for_lane_idle(struct mdss_dsi_ctrl_pdata *ctrl);
 
 irqreturn_t mdss_dsi_isr(int irq, void *ptr);
 irqreturn_t hw_vsync_handler(int irq, void *data);
@@ -539,6 +552,7 @@ void mdss_dsi_irq_handler_config(struct mdss_dsi_ctrl_pdata *ctrl_pdata);
 void mdss_dsi_set_tx_power_mode(int mode, struct mdss_panel_data *pdata);
 int mdss_dsi_clk_div_config(struct mdss_panel_info *panel_info,
 			    int frame_rate);
+int mdss_dsi_clk_refresh(struct mdss_panel_data *pdata, bool update_phy);
 int mdss_dsi_link_clk_init(struct platform_device *pdev,
 		      struct mdss_dsi_ctrl_pdata *ctrl_pdata);
 void mdss_dsi_link_clk_deinit(struct device *dev,
@@ -551,10 +565,6 @@ int mdss_dsi_shadow_clk_init(struct platform_device *pdev,
 		      struct mdss_dsi_ctrl_pdata *ctrl_pdata);
 void mdss_dsi_shadow_clk_deinit(struct device *dev,
 			struct mdss_dsi_ctrl_pdata *ctrl_pdata);
-int mdss_dsi_enable_panel_vddio_gpio(struct mdss_dsi_ctrl_pdata *ctrl_pdata,
-		int enable);
-int mdss_dsi_enable_panel_analog_power(struct mdss_dsi_ctrl_pdata *ctrl_pdata,
-		int enable);
 int mdss_dsi_panel_reset(struct mdss_panel_data *pdata, int enable);
 void mdss_dsi_phy_disable(struct mdss_dsi_ctrl_pdata *ctrl);
 void mdss_dsi_cmd_test_pattern(struct mdss_dsi_ctrl_pdata *ctrl);
@@ -582,6 +592,9 @@ u32 mdss_dsi_panel_cmd_read(struct mdss_dsi_ctrl_pdata *ctrl, char cmd0,
 		char cmd1, void (*fxn)(int), char *rbuf, int len);
 int mdss_dsi_panel_init(struct device_node *node,
 		struct mdss_dsi_ctrl_pdata *ctrl_pdata);
+int mdss_dsi_panel_timing_switch(struct mdss_dsi_ctrl_pdata *ctrl_pdata,
+			struct mdss_panel_timing *timing);
+
 int mdss_panel_parse_bl_settings(struct device_node *np,
 			struct mdss_dsi_ctrl_pdata *ctrl_pdata);
 int mdss_panel_get_dst_fmt(u32 bpp, char mipi_mode, u32 pixel_packing,
@@ -743,6 +756,12 @@ static inline bool mdss_dsi_is_ctrl_clk_slave(struct mdss_dsi_ctrl_pdata *ctrl)
 {
 	return mdss_dsi_is_hw_config_split(ctrl->shared_data) &&
 		(ctrl->ndx == DSI_CTRL_CLK_SLAVE);
+}
+
+static inline bool mdss_dsi_is_ctrl_clk_master(struct mdss_dsi_ctrl_pdata *ctrl)
+{
+	return mdss_dsi_is_hw_config_split(ctrl->shared_data) &&
+		(ctrl->ndx == DSI_CTRL_CLK_MASTER);
 }
 
 static inline bool mdss_dsi_is_te_based_esd(struct mdss_dsi_ctrl_pdata *ctrl)

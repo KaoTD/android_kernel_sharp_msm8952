@@ -119,6 +119,7 @@ obj-y				+= mmc/
 obj-$(CONFIG_MEMSTICK)		+= memstick/
 obj-y				+= leds/
 obj-$(CONFIG_SWITCH)		+= switch/
+obj-$(CONFIG_SHTIMER)		+= sharp/shtimer/
 obj-$(CONFIG_INFINIBAND)	+= infiniband/
 obj-$(CONFIG_SGI_SN)		+= sn/
 obj-y				+= firmware/
@@ -140,6 +141,14 @@ obj-$(CONFIG_STAGING)		+= staging/
 obj-y				+= platform/
 #common clk code
 obj-y				+= clk/
+obj-$(CONFIG_SHSYS_CUST)	+= sharp/shsys/
+obj-$(CONFIG_SHTERM)		+= sharp/shterm/
+obj-$(CONFIG_SHDIAG)		+= sharp/shdiag/
+obj-$(CONFIG_BATTERY_SH)	+= sharp/shbatt/
+obj-$(CONFIG_SENSORS_PROXIMITY) += sharp/proximity/
+obj-$(CONFIG_PROX_LIGHT)	+= sharp/proximity_light/
+obj-$(CONFIG_SHBOOT_CUST)	+= sharp/shboot/
+obj-$(CONFIG_SHDISP)        += sharp/shdisp/
 
 obj-$(CONFIG_MAILBOX)		+= mailbox/
 obj-$(CONFIG_HWSPINLOCK)	+= hwspinlock/
@@ -161,14 +170,26 @@ obj-$(CONFIG_IPACK_BUS)		+= ipack/
 obj-$(CONFIG_NTB)		+= ntb/
 obj-$(CONFIG_ANDROID)		+= android/
 
-#MobiCore
-obj-$(CONFIG_MOBICORE_SUPPORT)  += gud/
-
 obj-$(CONFIG_CORESIGHT)		+= coresight/
 obj-$(CONFIG_ESOC)		+= esoc/
+obj-$(CONFIG_DTV_TUNERDEV)		+= sharp/tunerdrv/
 
 obj-$(CONFIG_BIF)		+= bif/
+obj-$(CONFIG_SHUB)		+= sharp/shsensor_hub/ml630q790/
 obj-$(CONFIG_SENSORS)		+= sensors/
 obj-$(CONFIG_SENSORS_SSC)	+= sensors/
 
-obj-$(CONFIG_NFC_T6NE6)		+= nfc/T6NE6/
+# NFC/FeliCa driver
+obj-$(CONFIG_TOSHIBA_NFC)	+= sharp/nfc/
+#obj-$(CONFIG_CXD224X_NFC)	+= sharp/nfc_cxd224x/
+
+obj-$(CONFIG_SHLOG_SYSTEM)      += sharp/shlog/
+obj-$(CONFIG_SHVOLD_KILLPROCESS) += sharp/vold/
+
+obj-$(CONFIG_SHCAMERA_PICT)     += sharp/shcamled/
+
+obj-$(CONFIG_SH_FLIP_SWITCH) += sharp/shflip/
+
+obj-$(CONFIG_SHIRDA) += sharp/shirda/
+
+obj-$(CONFIG_NFC_T6NE6) += sharp/nfc/T6NE6/

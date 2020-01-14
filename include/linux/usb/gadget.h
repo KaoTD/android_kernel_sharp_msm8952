@@ -484,7 +484,14 @@ struct usb_gadget_ops {
 			struct usb_gadget_driver *);
 	int	(*udc_stop)(struct usb_gadget *,
 			struct usb_gadget_driver *);
+#ifdef CONFIG_USB_ANDROID_SH_CUST
+	int	(*is_vbus_connected) (struct usb_gadget *);
+	int	(*prevent_pullup) (struct usb_gadget *, int is_on);
+	int	(*is_selfpowered) (struct usb_gadget *);
 	int	(*set_fullspeed) (struct usb_gadget *, unsigned long);
+	int	(*usb_status_reset) (struct usb_gadget *);
+	int	(*pullup_internal) (struct usb_gadget *, int is_active);
+#endif /* CONFIG_USB_ANDROID_SH_CUST */
 };
 
 /**
@@ -929,6 +936,63 @@ static inline void usb_gadget_autopm_put_no_suspend(struct usb_gadget *gadget)
 	if (gadget && gadget->dev.parent)
 		pm_runtime_put_noidle(gadget->dev.parent);
 }
+
+#ifdef CONFIG_USB_ANDROID_SH_CUST
+/**
+ * usb_gadget_is_vbus_connected - check if vbus is connected
+ * @gadget:the peripheral being refered vbus-status
+ *
+ * Returns true(one) if vbus is connected. zero if vbus is not connected.
+ * negative errno without support.
+ */
+static inline int usb_gadget_is_vbus_connected(struct usb_gadget *gadget)
+{
+	if (!gadget->ops->is_vbus_connected)
+		return -EOPNOTSUPP;
+	return gadget->ops->is_vbus_connected(gadget);
+}
+
+/**
+ * usb_gadget_prevent_pullup - set pullup is disable
+ * @gadget:the peripheral being prevented pullup
+ *
+ * Returns zero on success, else negative errno.
+ */
+static inline int usb_gadget_prevent_pullup(struct usb_gadget *gadget)
+{
+	if (!gadget->ops->prevent_pullup)
+		return -EOPNOTSUPP;
+	return gadget->ops->prevent_pullup(gadget, 1);
+}
+
+/**
+ * usb_gadget_allow_pullup - set pullup is enable if need
+ * @gadget:the peripheral being allowed pullup
+ *
+ * Returns zero on success, else negative errno.
+ */
+static inline int usb_gadget_allow_pullup(struct usb_gadget *gadget)
+{
+	if (!gadget->ops->prevent_pullup)
+		return -EOPNOTSUPP;
+	return gadget->ops->prevent_pullup(gadget, 0);
+}
+
+/**
+ * usb_gadget_is_selfpowered - check if the device is selfpowered
+ * @gadget:the peripheral being checked
+ *
+ * Returns true(one) if the device is self-powered.
+ * zero if vbus is bus-powered.
+ * negative errno without support.
+ */
+static inline int usb_gadget_is_selfpowered(struct usb_gadget *gadget)
+{
+	if (!gadget->ops->is_selfpowered)
+		return -EOPNOTSUPP;
+	return gadget->ops->is_selfpowered(gadget);
+}
+
 /**
  * usb_gadget_force_fullspeed - set fullspeed.
  * @gadget:the device being declared is fullspeed connect
@@ -941,6 +1005,41 @@ static inline int usb_gadget_force_fullspeed( struct usb_gadget *gadget )
 		return -EOPNOTSUPP;
 	return gadget->ops->set_fullspeed(gadget, 1);
 }
+/**
+ * usb_gadget_allow_highspeed - set highspeed.
+ * @gadget:the device being declared as fs_connect_enable
+ *
+ * returns zero on success, else negative errno.
+ */
+static inline int usb_gadget_allow_highspeed( struct usb_gadget *gadget )
+{
+	if (!gadget->ops->set_fullspeed)
+		return -EOPNOTSUPP;
+	return gadget->ops->set_fullspeed(gadget, 0);
+}
+
+static inline int usb_gadget_status_reset( struct usb_gadget *gadget )
+{
+	if (!gadget->ops->usb_status_reset)
+		return -EOPNOTSUPP;
+	return gadget->ops->usb_status_reset(gadget);
+}
+
+static inline int usb_gadget_connect_internal( struct usb_gadget *gadget )
+{
+	if (!gadget->ops->pullup_internal)
+		return -EOPNOTSUPP;
+	return gadget->ops->pullup_internal(gadget, 1);
+}
+
+static inline int usb_gadget_disconnect_internal( struct usb_gadget *gadget )
+{
+	if (!gadget->ops->pullup_internal)
+		return -EOPNOTSUPP;
+	return gadget->ops->pullup_internal(gadget, 0);
+}
+#endif /* CONFIG_USB_ANDROID_SH_CUST */
+
 /*-------------------------------------------------------------------------*/
 
 /**

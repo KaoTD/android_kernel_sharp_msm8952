@@ -1,7 +1,7 @@
 /*
  * MDSS MDP Interface (used by framebuffer core)
  *
- * Copyright (c) 2007-2015, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2007-2017, The Linux Foundation. All rights reserved.
  * Copyright (C) 2007 Google Incorporated
  *
  * This software is licensed under the terms of the GNU General Public
@@ -48,6 +48,10 @@
 #include <linux/msm-bus-board.h>
 #include <soc/qcom/scm.h>
 #include <soc/qcom/rpm-smd.h>
+
+#ifdef CONFIG_SHDISP  /* CUST_ID_00071 */
+#include <linux/pm_qos.h>
+#endif /* CONFIG_SHDISP */
 
 #include "mdss.h"
 #include "mdss_fb.h"
@@ -1014,8 +1018,14 @@ static int mdss_mdp_gdsc_notifier_call(struct notifier_block *self,
 
 	mdata = container_of(self, struct mdss_data_type, gdsc_cb);
 
-	if (event & REGULATOR_EVENT_ENABLE)
-		__mdss_restore_sec_cfg(mdata);
+	if (event & REGULATOR_EVENT_ENABLE) {
+		/*
+		 * As SMMU in low tier targets is not power collapsible,
+		 * hence we don't need to restore sec configuration.
+		 */
+		if (!mdss_mdp_req_init_restore_cfg(mdata))
+			__mdss_restore_sec_cfg(mdata);
+	}
 
 	return NOTIFY_OK;
 }
@@ -1034,7 +1044,8 @@ static int mdss_iommu_tlb_timeout_notify(struct notifier_block *self,
 	switch (action) {
 	case TLB_SYNC_TIMEOUT:
 		pr_err("cb for TLB SYNC timeout. Dumping XLOG's\n");
-		MDSS_XLOG_TOUT_HANDLER_FATAL_DUMP("vbif", "mdp", "mdp_dbg_bus");
+		MDSS_XLOG_TOUT_HANDLER_FATAL_DUMP("vbif", "mdp",
+					"mdp_dbg_bus", "atomic_context");
 		break;
 	}
 
@@ -1707,6 +1718,20 @@ static int mdss_mdp_register_sysfs(struct mdss_data_type *mdata)
 	return rc;
 }
 
+#ifdef CONFIG_SHDISP /* CUST_ID_00071 */
+static struct pm_qos_request mdss_mdp_qos_req;
+const int cpm_qos_latency_POWER_COLLAPSE_STANDALONE=209;
+void mdss_mdp_latency_deny_collapse(void)
+{
+	pm_qos_update_request(&mdss_mdp_qos_req, cpm_qos_latency_POWER_COLLAPSE_STANDALONE);
+}
+
+void mdss_mdp_latency_allow_collapse(void)
+{
+	pm_qos_update_request(&mdss_mdp_qos_req, PM_QOS_DEFAULT_VALUE);
+}
+#endif /* CONFIG_SHDISP */
+
 int mdss_panel_get_intf_status(u32 disp_num, u32 intf_type)
 {
 	int rc, intf_status = 0;
@@ -1868,6 +1893,11 @@ static int mdss_mdp_probe(struct platform_device *pdev)
 		pr_err("unable to initialize mdp debugging\n");
 		goto probe_done;
 	}
+
+#ifdef CONFIG_SHDISP /* CUST_ID_00071 */
+	mdss_mdp_qos_req.type = PM_QOS_REQ_ALL_CORES;
+	pm_qos_add_request(&mdss_mdp_qos_req, PM_QOS_CPU_DMA_LATENCY, PM_QOS_DEFAULT_VALUE);
+#endif /* CONFIG_SHDISP */
 
 	pm_runtime_set_autosuspend_delay(&pdev->dev, AUTOSUSPEND_TIMEOUT_MS);
 	if (mdata->idle_pc_enabled)
@@ -3600,9 +3630,9 @@ static void apply_dynamic_ot_limit(u32 *ot_lim,
 
 	res = params->width * params->height;
 
-	pr_debug("w:%d h:%d rot:%d yuv:%d wb:%d res:%d\n",
+	pr_debug("w:%d h:%d rot:%d yuv:%d wb:%d res:%d fps:%d\n",
 		params->width, params->height, params->is_rot,
-		params->is_yuv, params->is_wb, res);
+		params->is_yuv, params->is_wb, res, params->frame_rate);
 
 	switch (mdata->mdp_rev) {
 	case MDSS_MDP_HW_REV_111:
@@ -3850,7 +3880,7 @@ int mdss_mdp_secure_display_ctrl(unsigned int enable)
 			&request, sizeof(request), &resp, sizeof(resp));
 	} else {
 		ret = scm_call2(SCM_SIP_FNID(SCM_SVC_MP,
-				MEM_PROTECT_SD_CTRL_FLAT), &desc);
+				MEM_PROTECT_SD_CTRL), &desc);
 		resp = desc.ret[0];
 	}
 
@@ -3871,6 +3901,17 @@ static inline int mdss_mdp_suspend_sub(struct mdss_data_type *mdata)
 
 	return 0;
 }
+
+#ifdef CONFIG_SHDISP /* CUST_ID_00044 */
+void mdss_mdp_suspend_shdisp(void)
+{
+	struct mdss_data_type *mdata = mdss_mdp_get_mdata();
+
+	if (mdata)
+		mdss_mdp_suspend_sub(mdata);
+	return;
+}
+#endif /* CONFIG_SHDISP */
 
 static inline int mdss_mdp_resume_sub(struct mdss_data_type *mdata)
 {
@@ -4027,6 +4068,7 @@ static int mdss_mdp_runtime_suspend(struct device *dev)
 	bool device_on = false;
 	if (!mdata)
 		return -ENODEV;
+
 	dev_dbg(dev, "pm_runtime: suspending. active overlay cnt=%d\n",
 		atomic_read(&mdata->active_intf_cnt));
 

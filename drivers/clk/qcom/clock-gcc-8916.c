@@ -924,8 +924,17 @@ static struct rcg_clk jpeg0_clk_src = {
 };
 
 static struct clk_freq_tbl ftbl_gcc_camss_mclk0_1_clk[] = {
+#ifdef CONFIG_MSM_CAMERA_SENSOR /* SH_CAMERA_DRIVER-> */
+	F(  8690000,      gpll0,   2,    679,   31250),		// ((800000000 / 2) * 679) / 31250 : 8691200
+#endif  /* SH_CAMERA_DRIVER<- */
 	F(   9600000,	      xo,   2,	  0,	0),
+#ifdef CONFIG_MSM_CAMERA_SENSOR /* SH_CAMERA_DRIVER-> */		//@@2015.12.1
+	F(  12000000,      gpll0,   1,    3,   200),			// ((800000000 / 1)  * 3) / 200 : 12000000
+#endif  /* SH_CAMERA_DRIVER<- */
 	F(  23880000,      gpll0,   1,    2,   67),
+#ifdef CONFIG_MSM_CAMERA_SENSOR /* SH_CAMERA_DRIVER-> */
+	F(  24000000,      gpll0,   1,    3,   100),			// ((800000000 / 1)  * 3) / 100 : 24000000
+#endif  /* SH_CAMERA_DRIVER<- */
 	F(  66670000,	   gpll0,  12,	  0,	0),
 	F_END
 };

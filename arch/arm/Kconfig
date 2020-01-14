@@ -38,7 +38,6 @@ config ARM
 	select HAVE_FUNCTION_GRAPH_TRACER if (!THUMB2_KERNEL)
 	select HAVE_FUNCTION_TRACER if (!XIP_KERNEL)
 	select HAVE_GENERIC_DMA_COHERENT
-	select HAVE_HW_BREAKPOINT if (PERF_EVENTS && (CPU_V6 || CPU_V6K || CPU_V7))
 	select HAVE_IDE if PCI || ISA || PCMCIA
 	select HAVE_IRQ_TIME_ACCOUNTING
 	select HAVE_KERNEL_GZIP
@@ -81,18 +80,6 @@ config ARM_DMA_USE_IOMMU
 	bool
 	select ARM_HAS_SG_CHAIN
 	select NEED_SG_DMA_LENGTH
-
-config SPEAKER_EXT_PA
-    default y
-    bool "Speaker external PA"
-    help
-        Support for external PA.
-
-config SPEAKER_EXT_PA_AW8738
-    default y
-    bool "Speaker external PA AW8738"
-    help
-        Support for the AW8738.
 
 if ARM_DMA_USE_IOMMU
 
@@ -2409,3 +2396,22 @@ source "crypto/Kconfig"
 source "lib/Kconfig"
 
 source "arch/arm/kvm/Kconfig"
+
+config SHSYS_CUST
+       bool "SHARP SYSTEM CUSTOMIZE"
+       default n
+
+config SHSYS_CUST_DEBUG
+	depends on SHSYS_CUST
+	default y
+	bool "SHARP SYSTEM CUSTOMIZE DEBUG"
+config SH_SLEEP_LOG
+    bool "SHARP CUSTOMIZE SLEEP LOG"
+    default y
+
+config SH_SHUTDOWN_FAILSAFE
+	bool "SHARP CUSTOMIZE Shutdown fail safe"
+	default y
+	help
+	 for shutdown fail safe
+

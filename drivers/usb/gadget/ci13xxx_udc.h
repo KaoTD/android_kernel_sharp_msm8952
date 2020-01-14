@@ -193,7 +193,13 @@ struct ci13xxx {
 	u32			  default_system_clk_rate;	/* max freq at
 						which system clock should run
 						in non streaming mode */;
+
+#ifdef CONFIG_USB_ANDROID_SH_CUST
+	u8			   self_powered; /* claim as self powered */
+	atomic_t                   prevent_pullup; /* is pull-up prevent */
+	u8			   self_powered_req;	/* selfpowered request */
 	unsigned long              fs_connect_enable; /* force full-speed enable */
+#endif /* CONFIG_USB_ANDROID_SH_CUST */
 };
 
 /******************************************************************************

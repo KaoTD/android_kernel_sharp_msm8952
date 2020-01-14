@@ -33,10 +33,10 @@ config ARM64
 	select HARDIRQS_SW_RESEND
 	select HAVE_ARCH_JUMP_LABEL
 	select HAVE_ARCH_KGDB
-	select HAVE_ARCH_SECCOMP_FILTER
-	select HAVE_ARCH_AUDITSYSCALL
 	select HAVE_ARCH_MMAP_RND_BITS
 	select HAVE_ARCH_MMAP_RND_COMPAT_BITS if COMPAT
+	select HAVE_ARCH_SECCOMP_FILTER
+	select HAVE_ARCH_AUDITSYSCALL
 	select HAVE_ARCH_TRACEHOOK
 	select HAVE_C_RECORDMCOUNT
 	select HAVE_CC_STACKPROTECTOR
@@ -102,6 +102,10 @@ config ARCH_MMAP_RND_COMPAT_BITS_MIN
 
 config ARCH_MMAP_RND_COMPAT_BITS_MAX
        default 16
+
+config ILLEGAL_POINTER_VALUE
+	hex
+	default 0xdead000000000000
 
 config STACKTRACE_SUPPORT
 	def_bool y
@@ -268,6 +272,36 @@ config ARCH_XGENE
 	bool "AppliedMicro X-Gene SOC Family"
 	help
 	  This enables support for AppliedMicro X-Gene SOC Family
+
+config ARCH_TRISH
+	depends on ARCH_MSM8916
+	bool "SHARP TRISH"
+	help
+	  Support for Sharp trish
+
+config ARCH_DECKARD_AL35
+	depends on ARCH_MSM8916
+	bool "SHARP AL35"
+	help
+	  Support for Sharp al35
+
+config ARCH_DECKARD_AL37
+	depends on ARCH_MSM8916
+	bool "SHARP AL37"
+	help
+	  Support for Sharp al37
+
+config ARCH_PA35
+	depends on ARCH_MSM8916
+	bool "SHARP PA35"
+	help
+	  Support for Sharp pa35
+
+config ARCH_PA37
+	depends on ARCH_MSM8916
+	bool "SHARP PA37"
+	help
+	  Support for Sharp pa37
 
 endmenu
 
@@ -713,3 +747,20 @@ source "arch/arm64/crypto/Kconfig"
 endif
 
 source "lib/Kconfig"
+config SHSYS_CUST
+       bool "SHARP SYSTEM CUSTOMIZE"
+       default n
+
+config SHSYS_CUST_DEBUG
+	depends on SHSYS_CUST
+	default y
+	bool "SHARP SYSTEM CUSTOMIZE DEBUG"
+config SH_SLEEP_LOG
+    bool "SHARP CUSTOMIZE SLEEP LOG"
+    default y
+
+config SH_SHUTDOWN_FAILSAFE
+	bool "SHARP CUSTOMIZE Shutdown fail safe"
+	default y
+	help
+	 for shutdown fail safe

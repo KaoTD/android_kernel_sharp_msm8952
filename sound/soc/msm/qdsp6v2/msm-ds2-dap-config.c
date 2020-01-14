@@ -1,4 +1,4 @@
-/* Copyright (c) 2013-2016, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2013-2017, The Linux Foundation. All rights reserved.
 * This program is free software; you can redistribute it and/or modify
 * it under the terms of the GNU General Public License version 2 and
 * only version 2 as published by the Free Software Foundation.
@@ -998,6 +998,20 @@ static int msm_ds2_dap_handle_bypass(struct dolby_param_data *dolby_data)
 							copp_idx, rc);
 					}
 				}
+				/* Turn on qti modules */
+				for (j = 1; j < mod_list[0]; j++) {
+					if (!msm_ds2_dap_can_enable_module(
+						mod_list[j]) ||
+						mod_list[j] ==
+						DS2_MODULE_ID)
+						continue;
+					pr_debug("%s: param enable %d\n",
+						__func__, mod_list[j]);
+					adm_param_enable(port_id, copp_idx,
+							 mod_list[j],
+							 MODULE_ENABLE);
+				}
+
 				/* Add adm api to resend calibration on port */
 				rc = msm_ds2_dap_send_cal_data(i);
 				if (rc < 0) {
@@ -1531,6 +1545,14 @@ static int msm_ds2_dap_get_param(u32 cmd, void *arg)
 		goto end;
 	}
 
+	/* Return if invalid length */
+	if (dolby_data->length >
+	       (DOLBY_MAX_LENGTH_INDIVIDUAL_PARAM - DOLBY_PARAM_PAYLOAD_SIZE)) {
+		pr_err("Invalid length %d", dolby_data->length);
+		rc = -EINVAL;
+		goto end;
+	}
+
 	for (i = 0; i < DS2_DEVICES_ALL; i++) {
 		if ((dev_map[i].active) &&
 			(dev_map[i].device_id & dolby_data->device_id)) {
@@ -1642,6 +1664,7 @@ static int msm_ds2_dap_param_visualizer_control_get(u32 cmd, void *arg)
 		ret = 0;
 		dolby_data->length = 0;
 		pr_err("%s Incorrect VCNB length", __func__);
+		return -EINVAL;
 	}
 
 	params_length = (2*length + DOLBY_VIS_PARAM_HEADER_SIZE) *

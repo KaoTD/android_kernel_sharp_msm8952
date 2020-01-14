@@ -1514,6 +1514,14 @@ config SERIAL_RP2_NR_UARTS
 	  If multiple cards are present, the default limit of 32 ports may
 	  need to be increased.
 
+config SERIAL_EXPAND_DEBUG_FUNCTION_SH
+	bool "SERIAL customize expand debug function"
+	default y
+
+config SERIAL_EXPAND_PORT_SH
+	bool "SERIAL customize expand number of ports"
+	default y
+
 endmenu
 
 endif # TTY

@@ -162,7 +162,7 @@ static void cam_smmu_page_fault_work(struct work_struct *work)
 			payload->flags,
 			iommu_cb_set.cb_info[idx].token);
 		if (rc < 0)
-			pr_err("Client handler returned rc = %d, token = %p,"
+			pr_err("Client handler returned rc = %d, token = %pK,"
 				" flags = %d, iova = %ld\n", rc,
 				iommu_cb_set.cb_info[idx].token, payload->flags, payload->iova);
 	}
@@ -212,7 +212,7 @@ static void cam_smmu_check_vaddr_in_range(int idx, void *vaddr)
 				mapping->ion_fd);
 			return;
 		} else {
-			pr_err("vaddr %pK is not in this range: %pK-%pK, ion_fd = %d\n",
+			CDBG("vaddr %pK is not in this range: %pK-%pK, ion_fd = %d\n",
 				vaddr, (void *)start_addr, (void *)end_addr,
 				mapping->ion_fd);
 		}
@@ -262,7 +262,7 @@ static int cam_smmu_iommu_fault_handler(struct iommu_domain *domain,
 
 	if (!token) {
 		pr_err("Error: token is NULL\n");
-		pr_err("Error: domain = %p, device = %p\n", domain, dev);
+		pr_err("Error: domain = %pK, device = %pK\n", domain, dev);
 		pr_err("iova = %lX, flags = %d\n", iova, flags);
 		return -ENOSYS;
 	}

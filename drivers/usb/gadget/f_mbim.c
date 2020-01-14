@@ -842,7 +842,6 @@ fmbim_cmd_complete(struct usb_ep *ep, struct usb_request *req)
 		return;
 	}
 
-
 	pr_debug("dev:%pK port#%d\n", dev, dev->port_num);
 
 	cpkt = mbim_alloc_ctrl_pkt(len, GFP_ATOMIC);

@@ -16,6 +16,7 @@
 #include <linux/kobject.h>
 #include <linux/notifier.h>
 #include <linux/sysfs.h>
+#include <asm/cputime.h>
 
 /*********************************************************************
  *                        CPUFREQ INTERFACE                          *
@@ -306,6 +307,10 @@ cpufreq_verify_within_cpu_limits(struct cpufreq_policy *policy)
 /* Govinfo Notifiers */
 #define CPUFREQ_LOAD_CHANGE		(0)
 
+#ifdef CONFIG_SHSYS_CUST
+void sh_cpufreq_update_policy_try(void);
+#endif /* CONFIG_SHSYS_CUST */
+
 #ifdef CONFIG_CPU_FREQ
 int cpufreq_register_notifier(struct notifier_block *nb, unsigned int list);
 int cpufreq_unregister_notifier(struct notifier_block *nb, unsigned int list);
@@ -483,4 +488,13 @@ static inline int cpufreq_generic_exit(struct cpufreq_policy *policy)
 	return 0;
 }
 
+/*********************************************************************
+ *                         CPUFREQ STATS                             *
+ *********************************************************************/
+
+#ifdef CONFIG_CPU_FREQ_STAT
+void acct_update_power(struct task_struct *p, cputime_t cputime);
+#else
+static inline void acct_update_power(struct task_struct *p, cputime_t cputime) {}
+#endif
 #endif /* _LINUX_CPUFREQ_H */

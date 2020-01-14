@@ -30,6 +30,12 @@
 #include <linux/of_gpio.h>
 #include <linux/spinlock.h>
 #include <linux/pinctrl/consumer.h>
+#ifdef CONFIG_KEYBOARD_GPIO_CUST_SC
+#include <linux/wakelock.h>
+
+#define COUNT_BUF_SIZE 16
+#define GPIOKEY_SUSPEND_WAKELOCK_TIMEOUT     (5*HZ/2)
+#endif /* CONFIG_KEYBOARD_GPIO_CUST_SC */
 
 struct gpio_button_data {
 	const struct gpio_keys_button *button;
@@ -41,6 +47,9 @@ struct gpio_button_data {
 	spinlock_t lock;
 	bool disabled;
 	bool key_pressed;
+#ifdef CONFIG_KEYBOARD_GPIO_CUST_SC
+	u32 count;
+#endif
 };
 
 struct gpio_keys_drvdata {
@@ -48,8 +57,53 @@ struct gpio_keys_drvdata {
 	struct pinctrl *key_pinctrl;
 	struct input_dev *input;
 	struct mutex disable_lock;
+#ifdef CONFIG_KEYBOARD_GPIO_CUST_SC
+	u8 side_key_state;
+	struct mutex wakelock_ctrl_lock;
+	struct wake_lock report_wakelock;
+#endif /* CONFIG_KEYBOARD_GPIO_CUST_SC */
 	struct gpio_button_data data[0];
 };
+
+#ifdef CONFIG_KEYBOARD_GPIO_CUST_SC
+static void gpio_keys_handle_key(struct gpio_keys_drvdata *ddata, int code, int state)
+{
+	u8 old_state;
+	
+	mutex_lock(&ddata->wakelock_ctrl_lock);
+	
+	old_state = ddata->side_key_state;
+	
+	pr_debug("%s(): code=%d state=%d\n", __func__, code, state);
+
+	if(code == KEY_VOLUMEDOWN){
+		if(state){
+			ddata->side_key_state |= (1 << 0);
+		}else{
+			ddata->side_key_state &= ~(1 << 0);
+		}
+	}else if(code == KEY_VOLUMEUP){
+		if(state){
+			ddata->side_key_state |= (1 << 1);
+		}else{
+			ddata->side_key_state &= ~(1 << 1);
+		}
+	}else if(code == KEY_CAMERA){
+		if(state){
+			ddata->side_key_state |= (1 << 2);
+		}else{
+			ddata->side_key_state &= ~(1 << 2);
+		}
+	}
+	
+	if(!old_state && ddata->side_key_state){
+		pr_debug("%s(): wake lock_timeout\n", __func__);
+		wake_lock_timeout(&ddata->report_wakelock, GPIOKEY_SUSPEND_WAKELOCK_TIMEOUT);
+	}
+	
+	mutex_unlock(&ddata->wakelock_ctrl_lock);
+}
+#endif /* CONFIG_KEYBOARD_GPIO_CUST_SC */
 
 /*
  * SYSFS interface for enabling/disabling keys and switches:
@@ -312,11 +366,108 @@ static DEVICE_ATTR(disabled_switches, S_IWUSR | S_IRUGO,
 		   gpio_keys_show_disabled_switches,
 		   gpio_keys_store_disabled_switches);
 
+#ifdef CONFIG_KEYBOARD_GPIO_CUST_SC
+static ssize_t gpio_keys_count_attr_show_helper(struct gpio_keys_drvdata *ddata,
+						char *buf, unsigned int code)
+{
+	int i;
+
+	for (i = 0; i < ddata->pdata->nbuttons; i++) {
+		struct gpio_button_data *bdata = &ddata->data[i];
+		if (bdata->button->code == code) {
+			return snprintf(buf, COUNT_BUF_SIZE, "%d", bdata->count);
+		}
+	}
+
+	return -EINVAL;
+}
+
+static ssize_t gpio_keys_count_attr_store_helper(struct gpio_keys_drvdata *ddata,
+						const char *buf, unsigned int code)
+{
+	u32 value;
+	ssize_t error = 0;
+	int i;
+
+	for (i = 0; i < ddata->pdata->nbuttons; i++) {
+		struct gpio_button_data *bdata = &ddata->data[i];
+		if (bdata->button->code == code) {
+			error = kstrtou32(buf, 10, &value);
+			if (error)
+				goto out;
+			bdata->count = value;
+			break;
+		}
+	}
+
+out:
+	return error;
+}
+
+#define ATTR_SHOW_FN_COUNT(code)					\
+static ssize_t gpio_keys_show_count_##code(struct device *dev,		\
+				     struct device_attribute *attr,	\
+				     char *buf)				\
+{									\
+	struct platform_device *pdev = to_platform_device(dev);		\
+	struct gpio_keys_drvdata *ddata = platform_get_drvdata(pdev);	\
+									\
+	return gpio_keys_count_attr_show_helper(ddata, buf, code);	\
+}
+
+ATTR_SHOW_FN_COUNT(KEY_VOLUMEDOWN);
+ATTR_SHOW_FN_COUNT(KEY_CAMERA);
+ATTR_SHOW_FN_COUNT(KEY_CAMERA_FOCUS);
+
+#define ATTR_STORE_FN_COUNT(code)					\
+static ssize_t gpio_keys_store_count_##code(struct device *dev,		\
+					struct device_attribute *attr,	\
+					const char *buf,		\
+					size_t count)			\
+{									\
+	struct platform_device *pdev = to_platform_device(dev);		\
+	struct gpio_keys_drvdata *ddata = platform_get_drvdata(pdev);	\
+	int rc;								\
+									\
+	if (count > COUNT_BUF_SIZE)					\
+		return -EINVAL;						\
+	rc = gpio_keys_count_attr_store_helper(ddata, buf, code);	\
+	if (rc)								\
+		return rc;						\
+									\
+	return count;							\
+}
+
+ATTR_STORE_FN_COUNT(KEY_VOLUMEDOWN);
+ATTR_STORE_FN_COUNT(KEY_CAMERA);
+ATTR_STORE_FN_COUNT(KEY_CAMERA_FOCUS);
+
+/*
+ * /sys/devices/soc.0/gpio_keys.86/volumedown
+ */
+static DEVICE_ATTR(volumedown, S_IWUSR | S_IRUGO,
+		   gpio_keys_show_count_KEY_VOLUMEDOWN,
+		   gpio_keys_store_count_KEY_VOLUMEDOWN);
+
+static DEVICE_ATTR(camera_key, S_IWUSR | S_IRUGO,
+		   gpio_keys_show_count_KEY_CAMERA,
+		   gpio_keys_store_count_KEY_CAMERA);
+
+static DEVICE_ATTR(camera_focus, S_IWUSR | S_IRUGO,
+		   gpio_keys_show_count_KEY_CAMERA_FOCUS,
+		   gpio_keys_store_count_KEY_CAMERA_FOCUS);
+#endif
+
 static struct attribute *gpio_keys_attrs[] = {
 	&dev_attr_keys.attr,
 	&dev_attr_switches.attr,
 	&dev_attr_disabled_keys.attr,
 	&dev_attr_disabled_switches.attr,
+#ifdef CONFIG_KEYBOARD_GPIO_CUST_SC
+	&dev_attr_volumedown.attr,
+	&dev_attr_camera_key.attr,
+	&dev_attr_camera_focus.attr,
+#endif
 	NULL,
 };
 
@@ -324,6 +475,9 @@ static struct attribute_group gpio_keys_attr_group = {
 	.attrs = gpio_keys_attrs,
 };
 
+#ifdef CONFIG_KEYBOARD_GPIO_CUST_SC
+static bool sc_camera_key_pressed = false;
+#endif /* CONFIG_KEYBOARD_GPIO_CUST_SC */
 static void gpio_keys_gpio_report_event(struct gpio_button_data *bdata)
 {
 	const struct gpio_keys_button *button = bdata->button;
@@ -331,11 +485,33 @@ static void gpio_keys_gpio_report_event(struct gpio_button_data *bdata)
 	unsigned int type = button->type ?: EV_KEY;
 	int state = (gpio_get_value_cansleep(button->gpio) ? 1 : 0) ^ button->active_low;
 
+#ifdef CONFIG_KEYBOARD_GPIO_CUST_SC
+	struct gpio_keys_drvdata *ddata = input_get_drvdata(input);
+#endif /* CONFIG_KEYBOARD_GPIO_CUST_SC */
+
 	if (type == EV_ABS) {
 		if (state)
 			input_event(input, type, button->code, button->value);
 	} else {
+#ifdef CONFIG_KEYBOARD_GPIO_CUST_SC
+		if ( type == EV_KEY && button->code == KEY_CAMERA ) {
+			if(!!state)
+				sc_camera_key_pressed = true;
+			else
+				sc_camera_key_pressed = false;
+		} else if ( type == EV_KEY && button->code == KEY_CAMERA_FOCUS ) {
+			if (sc_camera_key_pressed) {
+				dev_err(&input->dev, "Already KEY_CAMERA_FOCUS Pressed\n");
+				return;
+			}
+		}
+#endif
 		input_event(input, type, button->code, !!state);
+#ifdef CONFIG_KEYBOARD_GPIO_CUST_SC
+		gpio_keys_handle_key(ddata, button->code, state);
+		if (type == EV_KEY && !!state)
+			bdata->count++;
+#endif
 	}
 	input_sync(input);
 }
@@ -766,6 +942,15 @@ static int gpio_keys_probe(struct platform_device *pdev)
 	input->id.product = 0x0001;
 	input->id.version = 0x0100;
 
+#ifdef CONFIG_KEYBOARD_GPIO_CUST_SC
+    /*   don't send dummy release event when system resumes */
+    __set_bit(INPUT_PROP_NO_DUMMY_RELEASE, input->propbit);
+    
+    ddata->side_key_state = 0;
+	mutex_init(&ddata->wakelock_ctrl_lock);
+	wake_lock_init(&ddata->report_wakelock, WAKE_LOCK_SUSPEND, "gpio_keys_report_wakelock");
+#endif
+
 	/* Enable auto repeat feature of Linux input subsystem */
 	if (pdata->rep)
 		__set_bit(EV_REP, input->evbit);
@@ -798,6 +983,9 @@ static int gpio_keys_probe(struct platform_device *pdev)
 
 		if (button->wakeup)
 			wakeup = 1;
+#ifdef CONFIG_KEYBOARD_GPIO_CUST_SC
+		bdata->count = 0;
+#endif
 	}
 
 	error = sysfs_create_group(&pdev->dev.kobj, &gpio_keys_attr_group);
@@ -850,6 +1038,10 @@ static int gpio_keys_remove(struct platform_device *pdev)
 	struct gpio_keys_drvdata *ddata = platform_get_drvdata(pdev);
 	struct input_dev *input = ddata->input;
 	int i;
+
+#ifdef CONFIG_KEYBOARD_GPIO_CUST_SC
+	wake_lock_destroy(&ddata->report_wakelock);
+#endif
 
 	sysfs_remove_group(&pdev->dev.kobj, &gpio_keys_attr_group);
 
@@ -931,7 +1123,10 @@ static int gpio_keys_resume(struct device *dev)
 	if (error)
 		return error;
 
+#ifndef CONFIG_KEYBOARD_GPIO_CUST_SC
 	gpio_keys_report_state(ddata);
+#endif
+
 	return 0;
 }
 #endif

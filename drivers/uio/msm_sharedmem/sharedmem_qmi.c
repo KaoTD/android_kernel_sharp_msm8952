@@ -277,6 +277,7 @@ static u32 fill_debug_info(char *buffer, u32 buffer_size)
 static int debug_open(struct inode *inode, struct file *file)
 {
 	u32 buffer_size;
+
 	mutex_lock(&dbg_buf_lock);
 	if (debug_buffer != NULL) {
 		mutex_unlock(&dbg_buf_lock);

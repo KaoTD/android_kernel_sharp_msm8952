@@ -75,6 +75,12 @@ config QPNP_POWER_ON
 	  PNP PMIC. It currently supports reporting the change in status of
 	  the KPDPWR_N line (connected to the power-key).
 
+config QPNP_SCPOWER_ON
+	bool "Sc powerkey"
+	default n
+	help
+	  Say Y here if you want to enable the powerkey driver for the SC customize.
+
 config QPNP_CLKDIV
 	tristate "QPNP PMIC clkdiv driver"
 	depends on OF_SPMI && SPMI
@@ -289,10 +295,22 @@ config QPNP_HAPTIC
 	  on the Qualcomm Technologies' QPNP PMICs. It uses the android
 	  timed-output framework.
 
+config QPNP_SCHAPTIC
+	bool "Sc Haptic customize"
+	default n
+	depends on QPNP_HAPTIC
+	help
+	  Say 'y' here if you want to enable the Haptic driver for the SC customize.
+
 config SEEMP_CORE
 	tristate "SEEMP Core"
 	help
           This option enables Qualcomm Technologies, Inc. Snapdragron Smart Protection to
           detect anomalies in various activities. It records task activities in a log and
           rates the actions according to whether a typical user would use the tools.
+
+config SPS_CUST_SH
+	bool "SPS customize sharp"
+	depends on SPS
+	default y
 endmenu

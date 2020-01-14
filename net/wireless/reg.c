@@ -849,7 +849,7 @@ static void handle_channel(struct wiphy *wiphy,
 	struct wiphy *request_wiphy = NULL;
 	struct regulatory_request *lr = get_last_request();
 
-	if(of_board_is_sharp_eve()){
+	if(of_board_is_sharp_pa35()){
 		if(chan->center_freq == 2484){
 			chan->flags |= IEEE80211_CHAN_DISABLED;
 			return;

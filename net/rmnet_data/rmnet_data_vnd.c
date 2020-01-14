@@ -455,7 +455,7 @@ static int rmnet_vnd_ioctl(struct net_device *dev, struct ifreq *ifr, int cmd)
 		break;
 
 	default:
-		LOGH("Unkown IOCTL 0x%08X", cmd);
+		LOGM("Unknown IOCTL 0x%08X", cmd);
 		rc = -EINVAL;
 	}
 
@@ -590,8 +590,10 @@ int rmnet_vnd_create_dev(int id, struct net_device **new_device,
 	}
 
 	if (!prefix) {
+		/* Configuring DL checksum offload on rmnet_data interfaces */
+		dev->hw_features = NETIF_F_RXCSUM;
 		/* Configuring UL checksum offload on rmnet_data interfaces */
-		dev->hw_features = NETIF_F_IP_CSUM | NETIF_F_IPV6_CSUM |
+		dev->hw_features |= NETIF_F_IP_CSUM | NETIF_F_IPV6_CSUM |
 			NETIF_F_IPV6_UDP_CSUM;
 		/* Configuring GRO on rmnet_data interfaces */
 		dev->hw_features |= NETIF_F_GRO;
@@ -922,7 +924,7 @@ int rmnet_vnd_add_tc_flow(uint32_t id, uint32_t map_flow, uint32_t tc_flow)
 	list_add(&(itm->list), &(dev_conf->flow_head));
 	write_unlock_irqrestore(&dev_conf->flow_map_lock, flags);
 
-	LOGD("Created flow mapping [%s][0x%08X][0x%08X]@%p",
+	LOGD("Created flow mapping [%s][0x%08X][0x%08X]@%pK",
 	     dev->name, itm->map_flow_id, itm->tc_flow_id[0], itm);
 
 	return RMNET_CONFIG_OK;

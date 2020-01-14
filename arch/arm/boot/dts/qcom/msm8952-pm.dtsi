@@ -27,7 +27,7 @@
 		qcom,saw2-pmic-data1 = <0x00030000>;
 		qcom,saw2-pmic-data4 = <0x00010080>;
 		qcom,saw2-pmic-data5 = <0x00010000>;
-		qcom,vctl-timeout-us = <50>;
+		qcom,vctl-timeout-us = <500>;
 		qcom,vctl-port = <0x0>;
 		qcom,phase-port = <0x1>;
 		qcom,pfm-port = <0x2>;
@@ -349,6 +349,9 @@
 			<0xff 262>, /* ipa_bam_irq[2] */
 			<0xff 269>, /* rpm_wdog_expired_irq */
 			<0xff 270>, /* blsp1_bam_irq[0] */
+/* CONFIG_SHSYS_CUST Add Start */
+			<0xff 271>, /* sps by NFC */
+/* CONFIG_SHSYS_CUST Add End */
 			<0xff 272>, /* smmu_intr_bus[17] */
 			<0xff 273>, /* smmu_bus_intr[18] */
 			<0xff 274>, /* smmu_bus_intr[19] */
@@ -397,6 +400,10 @@
 			<51  73>,
 			<52  74>,
 			<53  62>,
+/* CONFIG_KEYBOARD_GPIO_CUST_SC Add Start */
+			<54  131>,
+			<55  132>,
+/* CONFIG_KEYBOARD_GPIO_CUST_SC Add End */
 			<0xff 86>,
 			<0xff 87>,
 			<0xff 88>;

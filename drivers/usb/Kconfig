@@ -126,6 +126,11 @@ config USB_USS720
 	  To compile this driver as a module, choose M here: the
 	  module will be called uss720.
 
+# 20141119 USB SHARP CUSTOMIZE ADD START
+config USB_DEBUG_SH_LOG
+	boolean "Sharp customize debug messages"
+	default n
+# 20141119 USB SHARP CUSTOMIZE ADD END
 source "drivers/usb/serial/Kconfig"
 
 source "drivers/usb/misc/Kconfig"

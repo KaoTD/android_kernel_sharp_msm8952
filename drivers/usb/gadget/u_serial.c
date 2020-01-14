@@ -30,9 +30,9 @@
 #include <linux/module.h>
 #include <linux/debugfs.h>
 #include <linux/workqueue.h>
-#include <soc/qcom/socinfo.h>
 
 #include "u_serial.h"
+
 
 /*
  * This component encapsulates the TTY layer glue needed to provide basic
@@ -450,8 +450,9 @@ __acquires(&port->port_lock)
 		 */
 		if (!port->port_usb) {
 			do_tty_wake = false;
-			if(!of_board_is_sharp_eve())
-				gs_free_req(in, req);
+#ifndef CONFIG_USB_ANDROID_SH_CUST
+			gs_free_req(in, req);
+#endif /* CONFIG_USB_ANDROID_SH_CUST */
 			break;
 		}
 		if (status) {
@@ -508,10 +509,11 @@ __acquires(&port->port_lock)
 
 		req = list_entry(pool->next, struct usb_request, list);
 		list_del(&req->list);
-		if(of_board_is_sharp_eve())
-			req->length = min((u16)out->maxpacket, (u16)RX_BUF_SIZE);
-		else
-			req->length = RX_BUF_SIZE;
+#ifdef CONFIG_USB_ANDROID_SH_CUST
+		req->length = min((u16)out->maxpacket, (u16)RX_BUF_SIZE);
+#else /* CONFIG_USB_ANDROID_SH_CUST */
+		req->length = RX_BUF_SIZE;
+#endif /* CONFIG_USB_ANDROID_SH_CUST */
 
 		/* drop lock while we call out; the controller driver
 		 * may need to call us back (e.g. for disconnect)
@@ -833,11 +835,12 @@ static int gs_open(struct tty_struct *tty, struct file *file)
 
 			/* already open?  Great. */
 			if (port->port.count) {
-				if(of_board_is_sharp_eve()) {
-					/* already opened ... must return EBUSY after unlock */
-					status = -ENOTSUPP;
-				} else
-					status = 0;
+#ifdef CONFIG_USB_ANDROID_SH_CUST
+				/* already opened ... must return EBUSY after unlock */
+				status = -ENOTSUPP;
+#else /* CONFIG_USB_ANDROID_SH_CUST */
+				status = 0;
+#endif /* CONFIG_USB_ANDROID_SH_CUST */
 				port->port.count++;
 
 			/* currently opening/closing? wait ... */
@@ -857,8 +860,10 @@ static int gs_open(struct tty_struct *tty, struct file *file)
 		default:
 			/* fully handled */
 			return status;
+#ifdef CONFIG_USB_ANDROID_SH_CUST
 		case -ENOTSUPP:
 			return -EBUSY;
+#endif /* CONFIG_USB_ANDROID_SH_CUST */
 		case -EAGAIN:
 			/* must do the work */
 			break;
@@ -883,7 +888,7 @@ static int gs_open(struct tty_struct *tty, struct file *file)
 		spin_lock_irq(&port->port_lock);
 
 		if (status) {
-			pr_debug("gs_open: ttyGS%d (%p,%p) no buffer\n",
+			pr_debug("gs_open: ttyGS%d (%pK,%pK) no buffer\n",
 				port->port_num, tty, file);
 			port->openclose = false;
 			goto exit_unlock_port;
@@ -918,7 +923,7 @@ static int gs_open(struct tty_struct *tty, struct file *file)
 			gser->connect(gser);
 	}
 
-	pr_debug("gs_open: ttyGS%d (%p,%p)\n", port->port_num, tty, file);
+	pr_debug("gs_open: ttyGS%d (%pK,%pK)\n", port->port_num, tty, file);
 
 	status = 0;
 
@@ -954,7 +959,7 @@ static void gs_close(struct tty_struct *tty, struct file *file)
 		goto exit;
 	}
 
-	pr_debug("gs_close: ttyGS%d (%p,%p) ...\n", port->port_num, tty, file);
+	pr_debug("gs_close: ttyGS%d (%pK,%pK) ...\n", port->port_num, tty, file);
 
 	/* mark port as closing but in use; we can drop port lock
 	 * and sleep if necessary
@@ -992,7 +997,7 @@ static void gs_close(struct tty_struct *tty, struct file *file)
 
 	port->openclose = false;
 
-	pr_debug("gs_close: ttyGS%d (%p,%p) done!\n",
+	pr_debug("gs_close: ttyGS%d (%pK,%pK) done!\n",
 			port->port_num, tty, file);
 
 	wake_up(&port->port.close_wait);
@@ -1008,7 +1013,7 @@ static int gs_write(struct tty_struct *tty, const unsigned char *buf, int count)
 
 	if (!port)
 		return 0;
-	pr_vdebug("gs_write: ttyGS%d (%p) writing %d bytes\n",
+	pr_vdebug("gs_write: ttyGS%d (%pK) writing %d bytes\n",
 			port->port_num, tty, count);
 
 	spin_lock_irqsave(&port->port_lock, flags);
@@ -1030,7 +1035,7 @@ static int gs_put_char(struct tty_struct *tty, unsigned char ch)
 
 	if (!port)
 		return 0;
-	pr_vdebug("gs_put_char: (%d,%p) char=0x%x, called from %pf\n",
+	pr_vdebug("gs_put_char: (%d,%pK) char=0x%x, called from %pKf\n",
 		port->port_num, tty, ch, __builtin_return_address(0));
 
 	spin_lock_irqsave(&port->port_lock, flags);
@@ -1047,7 +1052,7 @@ static void gs_flush_chars(struct tty_struct *tty)
 
 	if (!port)
 		return;
-	pr_vdebug("gs_flush_chars: (%d,%p)\n", port->port_num, tty);
+	pr_vdebug("gs_flush_chars: (%d,%pK)\n", port->port_num, tty);
 
 	spin_lock_irqsave(&port->port_lock, flags);
 	if (port->port_usb)
@@ -1068,7 +1073,7 @@ static int gs_write_room(struct tty_struct *tty)
 		room = gs_buf_space_avail(&port->port_write_buf);
 	spin_unlock_irqrestore(&port->port_lock, flags);
 
-	pr_vdebug("gs_write_room: (%d,%p) room=%d\n",
+	pr_vdebug("gs_write_room: (%d,%pK) room=%d\n",
 		port->port_num, tty, room);
 
 	return room;
@@ -1086,7 +1091,7 @@ static int gs_chars_in_buffer(struct tty_struct *tty)
 	chars = gs_buf_data_avail(&port->port_write_buf);
 	spin_unlock_irqrestore(&port->port_lock, flags);
 
-	pr_vdebug("gs_chars_in_buffer: (%d,%p) chars=%d\n",
+	pr_vdebug("gs_chars_in_buffer: (%d,%pK) chars=%d\n",
 		port->port_num, tty, chars);
 
 	return chars;
@@ -1284,6 +1289,9 @@ static ssize_t debug_read_status(struct file *file, char __user *ubuf,
 	int ret;
 	int result = 0;
 
+	if (!ui_dev)
+		return -EINVAL;
+
 	tty = ui_dev->port.tty;
 	gser = ui_dev->port_usb;
 
@@ -1336,6 +1344,9 @@ static ssize_t debug_write_reset(struct file *file, const char __user *buf,
 	struct gs_port *ui_dev = file->private_data;
 	unsigned long flags;
 
+	if (!ui_dev)
+		return -EINVAL;
+
 	spin_lock_irqsave(&ui_dev->port_lock, flags);
 	ui_dev->nbytes_from_host = ui_dev->nbytes_to_tty =
 			ui_dev->nbytes_from_tty = ui_dev->nbytes_to_host = 0;
@@ -1364,6 +1375,9 @@ struct dentry *gs_dent;
 static void usb_debugfs_init(struct gs_port *ui_dev, int port_num)
 {
 	char buf[48];
+
+	if (!ui_dev)
+		return;
 
 	snprintf(buf, 48, "usb_serial%d", port_num);
 	gs_dent = debugfs_create_dir(buf, 0);
@@ -1547,8 +1561,12 @@ int gserial_connect(struct gserial *gser, u8 port_num)
 		if (gser->disconnect)
 			gser->disconnect(gser);
 	}
-	if (of_board_is_sharp_eve() && port->port_usb)
+
+#ifdef CONFIG_USB_ANDROID_SH_CUST
+	if (port->port_usb)
 		status = gs_start_tx(port);
+#endif /* CONFIG_USB_ANDROID_SH_CUST */
+
 	spin_unlock_irqrestore(&port->port_lock, flags);
 
 	return status;
@@ -1645,12 +1663,12 @@ static int userial_init(void)
 			B9600 | CS8 | CREAD | HUPCL | CLOCAL;
 	gs_tty_driver->init_termios.c_ispeed = 9600;
 	gs_tty_driver->init_termios.c_ospeed = 9600;
-	if(of_board_is_sharp_eve()) {
-		gs_tty_driver->init_termios.c_iflag = 0;
-		gs_tty_driver->init_termios.c_oflag = 0;
-		gs_tty_driver->init_termios.c_lflag = 0;
-	}
 
+#ifdef CONFIG_USB_ANDROID_SH_SERIALS
+	gs_tty_driver->init_termios.c_iflag = 0;
+	gs_tty_driver->init_termios.c_oflag = 0;
+	gs_tty_driver->init_termios.c_lflag = 0;
+#endif /* CONFIG_USB_ANDROID_SH_SERIALS */
 	tty_set_operations(gs_tty_driver, &gs_tty_ops);
 	for (i = 0; i < MAX_U_SERIAL_PORTS; i++)
 		mutex_init(&ports[i].lock);

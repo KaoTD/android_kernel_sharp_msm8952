@@ -35,6 +35,9 @@
 
 #include <asm/fb.h>
 
+#ifdef CONFIG_SHDISP /* CUST_ID_00054 */
+#include "msm/mdss/mdss_shdisp.h"
+#endif /* CONFIG_SHDISP */
 
     /*
      *  Frame buffer device initialization and setup routines
@@ -1087,6 +1090,13 @@ static long do_fb_ioctl(struct fb_info *info, unsigned int cmd,
 	void __user *argp = (void __user *)arg;
 	long ret = 0;
 
+	memset(&var, 0, sizeof(var));
+	memset(&fix, 0, sizeof(fix));
+	memset(&con2fb, 0, sizeof(con2fb));
+	memset(&cmap_from, 0, sizeof(cmap_from));
+	memset(&cmap, 0, sizeof(cmap));
+	memset(&event, 0, sizeof(event));
+
 	switch (cmd) {
 	case FBIOGET_VSCREENINFO:
 		if (!lock_fb_info(info))
@@ -1192,7 +1202,14 @@ static long do_fb_ioctl(struct fb_info *info, unsigned int cmd,
 			return -ENODEV;
 		console_lock();
 		info->flags |= FBINFO_MISC_USEREVENT;
+#ifdef CONFIG_SHDISP /* CUST_ID_00054 */
+		SHDISP_VIDEO_PERFORMANCE("RESUME MSMFB BLANK-START 0010 START\n");
+		pr_info("MSMFB FBIOBLANK(%ld) called.\n", arg);
+#endif /* CONFIG_SHDISP */
 		ret = fb_blank(info, arg);
+#ifdef CONFIG_SHDISP /* CUST_ID_00054 */
+		SHDISP_VIDEO_PERFORMANCE("RESUME MSMFB BLANK-START 0010 END\n");
+#endif /* CONFIG_SHDISP */
 		info->flags &= ~FBINFO_MISC_USEREVENT;
 		console_unlock();
 		unlock_fb_info(info);

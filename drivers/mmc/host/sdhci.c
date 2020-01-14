@@ -30,7 +30,6 @@
 #include <linux/mmc/card.h>
 #include <linux/mmc/slot-gpio.h>
 #include <linux/mmc/sdio.h>
-#include <soc/qcom/socinfo.h>
 
 #include <trace/events/mmc.h>
 
@@ -55,8 +54,6 @@
 #define SDHCI_DBG_DUMP_RS_INTERVAL (10 * HZ)
 #define SDHCI_DBG_DUMP_RS_BURST 2
 
-extern bool mmc_sd_pending_resume;
-
 static unsigned int debug_quirks = 0;
 static unsigned int debug_quirks2;
 
@@ -70,6 +67,15 @@ static void sdhci_tuning_timer(unsigned long data);
 static void sdhci_enable_preset_value(struct sdhci_host *host, bool enable);
 static bool sdhci_check_state(struct sdhci_host *);
 static void sdhci_show_adma_error(struct sdhci_host *host);
+
+#ifdef CONFIG_MMC_SD_BATTLOG_CUST_SH
+#include "../card/sh_sd_battlog.h"
+static u32 sh_mmc_sd_err_cmd = 0;
+#endif /* CONFIG_MMC_SD_BATTLOG_CUST_SH */
+
+#ifdef CONFIG_HS200_TUNING_RETRY_EMMC_CUST_SH
+static bool during_tuning_flg = false;
+#endif /* CONFIG_HS200_TUNING_RETRY_EMMC_CUST_SH */
 
 #ifdef CONFIG_PM_RUNTIME
 static int sdhci_runtime_pm_get(struct sdhci_host *host);
@@ -932,6 +938,11 @@ static void sdhci_prepare_data(struct sdhci_host *host, struct mmc_command *cmd)
 	if (host->flags & (SDHCI_USE_SDMA | SDHCI_USE_ADMA))
 		host->flags |= SDHCI_REQ_USE_DMA;
 
+	if ((host->quirks2 & SDHCI_QUIRK2_USE_PIO_FOR_EMMC_TUNING) &&
+		(cmd->opcode ==  MMC_SEND_TUNING_BLOCK_HS200 ||
+		cmd->opcode == MMC_SEND_TUNING_BLOCK_HS400))
+		host->flags &= ~SDHCI_REQ_USE_DMA;
+
 	/*
 	 * FIXME: This doesn't account for merging when mapping the
 	 * scatterlist.
@@ -1189,6 +1200,11 @@ static void sdhci_send_command(struct sdhci_host *host, struct mmc_command *cmd)
 	unsigned long timeout;
 
 	WARN_ON(host->cmd);
+
+#ifdef CONFIG_MMC_SD_BATTLOG_CUST_SH
+	if (strncmp(mmc_hostname(host->mmc), HOST_MMC_SD, sizeof(HOST_MMC_SD)) == 0)
+		sh_mmc_sd_err_cmd = cmd->opcode;
+#endif /* CONFIG_MMC_SD_BATTLOG_CUST_SH */
 
 	/* Wait max 10 ms */
 	timeout = 10000;
@@ -1667,6 +1683,9 @@ static void sdhci_update_pm_qos(struct mmc_host *mmc,
  * MMC callbacks                                                             *
  *                                                                           *
 \*****************************************************************************/
+#ifdef CONFIG_MMC_SD_PENDING_RESUME_CUST_SH
+extern bool sh_mmc_pending_resume;
+#endif /* CONFIG_MMC_SD_PENDING_RESUME_CUST_SH */
 
 static int sdhci_enable(struct mmc_host *mmc)
 {
@@ -1675,13 +1694,13 @@ static int sdhci_enable(struct mmc_host *mmc)
 	if (host->ops->platform_bus_voting)
 		host->ops->platform_bus_voting(host, 1);
 
-	if ((of_board_is_sharp_eve()) && mmc->card &&
-		(mmc_card_sd(mmc->card))) {
-		if (mmc_sd_pending_resume == true) {
-			mmc_sd_pending_resume = false;
+#ifdef CONFIG_MMC_SD_PENDING_RESUME_CUST_SH
+	if (strncmp(mmc_hostname(mmc), HOST_MMC_SD, sizeof(HOST_MMC_SD)) == 0)
+		if (sh_mmc_pending_resume == true) {
+			sh_mmc_pending_resume = false;
 			mmc_resume_host(mmc);
 		}
-	}
+#endif /* CONFIG_MMC_SD_PENDING_RESUME_CUST_SH */
 
 	return 0;
 }
@@ -1694,6 +1713,20 @@ static int sdhci_disable(struct mmc_host *mmc)
 		host->ops->platform_bus_voting(host, 0);
 
 	return 0;
+}
+
+static void sdhci_notify_halt(struct mmc_host *mmc, bool halt)
+{
+	struct sdhci_host *host = mmc_priv(mmc);
+
+	pr_debug("%s: halt notification was sent, halt=%d\n",
+		mmc_hostname(mmc), halt);
+	if (host->flags & SDHCI_USE_ADMA_64BIT) {
+		if (halt)
+			host->adma_desc_line_sz = 16;
+		else
+			host->adma_desc_line_sz = 12;
+	}
 }
 
 static inline void sdhci_update_power_policy(struct sdhci_host *host,
@@ -1970,10 +2003,14 @@ static void sdhci_request(struct mmc_host *mmc, struct mmc_request *mrq)
 				host->mrq = NULL;
 				host->flags &= ~SDHCI_NEEDS_RETUNING;
 				spin_unlock_irqrestore(&host->lock, flags);
+#ifdef CONFIG_MMC_BUG_FIX_CUST_SH
 				if (mmc_card_hs400_strobe(mmc->card))
 					sdhci_enhanced_strobe(mmc);
 				else
 					sdhci_execute_tuning(mmc, tuning_opcode);
+#else /* CONFIG_MMC_BUG_FIX_CUST_SH */
+				sdhci_execute_tuning(mmc, tuning_opcode);
+#endif /* CONFIG_MMC_BUG_FIX_CUST_SH */
 				spin_lock_irqsave(&host->lock, flags);
 
 				/* Restore original mmc_request structure */
@@ -2592,6 +2629,15 @@ static int sdhci_execute_tuning(struct mmc_host *mmc, u32 opcode)
 	int err = 0;
 	bool requires_tuning_nonuhs = false;
 
+#ifdef CONFIG_HS200_TUNING_RETRY_EMMC_CUST_SH
+	if (strncmp(mmc_hostname(mmc), HOST_MMC_MMC, sizeof(HOST_MMC_MMC)) == 0) {
+		if (during_tuning_flg)
+			return 0;
+		else
+			during_tuning_flg = true;
+	}
+#endif /* CONFIG_HS200_TUNING_RETRY_EMMC_CUST_SH */
+
 	host = mmc_priv(mmc);
 
 	sdhci_runtime_pm_get(host);
@@ -2620,6 +2666,10 @@ static int sdhci_execute_tuning(struct mmc_host *mmc, u32 opcode)
 		spin_unlock(&host->lock);
 		enable_irq(host->irq);
 		sdhci_runtime_pm_put(host);
+#ifdef CONFIG_HS200_TUNING_RETRY_EMMC_CUST_SH
+		if (strncmp(mmc_hostname(mmc), HOST_MMC_MMC, sizeof(HOST_MMC_MMC)) == 0)
+			during_tuning_flg = false;
+#endif /* CONFIG_HS200_TUNING_RETRY_EMMC_CUST_SH */
 		return 0;
 	}
 
@@ -2782,6 +2832,10 @@ out:
 	enable_irq(host->irq);
 	sdhci_runtime_pm_put(host);
 
+#ifdef CONFIG_HS200_TUNING_RETRY_EMMC_CUST_SH
+	if (strncmp(mmc_hostname(mmc), HOST_MMC_MMC, sizeof(HOST_MMC_MMC)) == 0)
+		during_tuning_flg = false;
+#endif /* CONFIG_HS200_TUNING_RETRY_EMMC_CUST_SH */
 	return err;
 }
 
@@ -2911,6 +2965,7 @@ static const struct mmc_host_ops sdhci_ops = {
 	.stop_request = sdhci_stop_request,
 	.get_xfer_remain = sdhci_get_xfer_remain,
 	.notify_load	= sdhci_notify_load,
+	.notify_halt	= sdhci_notify_halt,
 	.notify_pm_status	= sdhci_notify_pm_status,
 };
 
@@ -3011,6 +3066,9 @@ static void sdhci_timeout_timer(unsigned long data)
 				sdhci_show_adma_error(host);
 			else
 				sdhci_dumpregs(host);
+#ifdef CONFIG_MMC_SD_BATTLOG_CUST_SH
+			mmc_set_err_cmd_type(host->mmc, sh_mmc_sd_err_cmd, _REQ_TIMEOUT);
+#endif /* CONFIG_MMC_SD_BATTLOG_CUST_SH */
 		}
 
 		if (host->data) {
@@ -3072,11 +3130,23 @@ static void sdhci_cmd_irq(struct sdhci_host *host, u32 intmask)
 	trace_mmc_cmd_rw_end(host->cmd->opcode, intmask,
 				sdhci_readl(host, SDHCI_RESPONSE));
 
+#ifdef CONFIG_MMC_SD_BATTLOG_CUST_SH
+	if (intmask & SDHCI_INT_TIMEOUT) {
+		host->cmd->error = -ETIMEDOUT;
+		mmc_set_err_cmd_type(host->mmc, sh_mmc_sd_err_cmd, _CMD_TIMEOUT);
+	} else if (intmask & (SDHCI_INT_CRC | SDHCI_INT_END_BIT |
+			SDHCI_INT_INDEX)) {
+		host->cmd->error = -EILSEQ;
+		if (intmask & SDHCI_INT_CRC)
+			mmc_set_err_cmd_type(host->mmc, sh_mmc_sd_err_cmd, _CMD_CRC_ERROR);
+	}
+#else /* CONFIG_MMC_SD_BATTLOG_CUST_SH */
 	if (intmask & SDHCI_INT_TIMEOUT)
 		host->cmd->error = -ETIMEDOUT;
 	else if (intmask & (SDHCI_INT_CRC | SDHCI_INT_END_BIT |
 			SDHCI_INT_INDEX))
 		host->cmd->error = -EILSEQ;
+#endif /* CONFIG_MMC_SD_BATTLOG_CUST_SH */
 
 	if (intmask & SDHCI_INT_AUTO_CMD_ERR) {
 		auto_cmd_status = host->auto_cmd_err_sts;
@@ -3174,9 +3244,10 @@ static void sdhci_data_irq(struct sdhci_host *host, u32 intmask)
 
 	/* CMD19 generates _only_ Buffer Read Ready interrupt */
 	if (intmask & SDHCI_INT_DATA_AVAIL) {
-		if (command == MMC_SEND_TUNING_BLOCK ||
-		    command == MMC_SEND_TUNING_BLOCK_HS200 ||
-		    command == MMC_SEND_TUNING_BLOCK_HS400) {
+		if (!(host->quirks2 & SDHCI_QUIRK2_NON_STANDARD_TUNING) &&
+			(command == MMC_SEND_TUNING_BLOCK ||
+			command == MMC_SEND_TUNING_BLOCK_HS200 ||
+			command == MMC_SEND_TUNING_BLOCK_HS400)) {
 			host->tuning_done = 1;
 			wake_up(&host->buf_ready_int);
 			return;
@@ -3207,6 +3278,19 @@ static void sdhci_data_irq(struct sdhci_host *host, u32 intmask)
 		return;
 	}
 
+#ifdef CONFIG_MMC_SD_BATTLOG_CUST_SH
+	if (intmask & SDHCI_INT_DATA_TIMEOUT) {
+		host->data->error = -ETIMEDOUT;
+		mmc_set_err_cmd_type(host->mmc, sh_mmc_sd_err_cmd, _DATA_TIMEOUT);
+	} else if (intmask & SDHCI_INT_DATA_END_BIT)
+		host->data->error = -EILSEQ;
+	else if ((intmask & SDHCI_INT_DATA_CRC) &&
+		SDHCI_GET_CMD(sdhci_readw(host, SDHCI_COMMAND))
+			!= MMC_BUS_TEST_R) {
+		host->data->error = -EILSEQ;
+		mmc_set_err_cmd_type(host->mmc, sh_mmc_sd_err_cmd, _DATA_CRC_ERROR);
+	}
+#else /* CONFIG_MMC_SD_BATTLOG_CUST_SH */
 	if (intmask & SDHCI_INT_DATA_TIMEOUT)
 		host->data->error = -ETIMEDOUT;
 	else if (intmask & SDHCI_INT_DATA_END_BIT)
@@ -3214,6 +3298,7 @@ static void sdhci_data_irq(struct sdhci_host *host, u32 intmask)
 	else if ((intmask & SDHCI_INT_DATA_CRC) &&
 		(command != MMC_BUS_TEST_R))
 		host->data->error = -EILSEQ;
+#endif /* CONFIG_MMC_SD_BATTLOG_CUST_SH */
 	else if (intmask & SDHCI_INT_ADMA_ERROR) {
 		pr_err("%s: ADMA error\n", mmc_hostname(host->mmc));
 		sdhci_show_adma_error(host);
@@ -3761,6 +3846,22 @@ static int sdhci_is_adma2_64bit(struct sdhci_host *host)
 #endif
 
 #ifdef CONFIG_MMC_CQ_HCI
+static void sdhci_cmdq_set_transfer_params(struct mmc_host *mmc)
+{
+	struct sdhci_host *host = mmc_priv(mmc);
+	u8 ctrl;
+
+	if (host->version >= SDHCI_SPEC_200) {
+		ctrl = sdhci_readb(host, SDHCI_HOST_CONTROL);
+		ctrl &= ~SDHCI_CTRL_DMA_MASK;
+		if (host->flags & SDHCI_USE_ADMA_64BIT)
+			ctrl |= SDHCI_CTRL_ADMA64;
+		else
+			ctrl |= SDHCI_CTRL_ADMA32;
+		sdhci_writeb(host, ctrl, SDHCI_HOST_CONTROL);
+	}
+}
+
 static void sdhci_cmdq_clear_set_irqs(struct mmc_host *mmc, bool clear)
 {
 	struct sdhci_host *host = mmc_priv(mmc);
@@ -3865,6 +3966,10 @@ static void sdhci_cmdq_update_pm_qos(struct mmc_host *mmc,
 }
 
 #else
+static void sdhci_cmdq_set_transfer_params(struct mmc_host *mmc)
+{
+
+}
 static void sdhci_cmdq_clear_set_irqs(struct mmc_host *mmc, bool clear)
 {
 
@@ -3930,6 +4035,7 @@ static const struct cmdq_host_ops sdhci_cmdq_ops = {
 	.crypto_cfg_reset	= sdhci_cmdq_crypto_cfg_reset,
 	.post_cqe_halt = sdhci_cmdq_post_cqe_halt,
 	.pm_qos_update = sdhci_cmdq_update_pm_qos,
+	.set_transfer_params = sdhci_cmdq_set_transfer_params,
 };
 
 int sdhci_add_host(struct sdhci_host *host)
@@ -3969,6 +4075,12 @@ int sdhci_add_host(struct sdhci_host *host)
 		caps[1] = (host->quirks & SDHCI_QUIRK_MISSING_CAPS) ?
 			host->caps1 :
 			sdhci_readl(host, SDHCI_CAPABILITIES_1);
+
+#ifdef CONFIG_MMC_SD_ENABLE_ONLY_DDR50_CUST_SH
+	if (!strcmp(mmc_hostname(mmc), HOST_MMC_SD))
+		caps[1] &= ~(SDHCI_SUPPORT_SDR104 | SDHCI_SUPPORT_SDR50 |
+						SDHCI_USE_SDR50_TUNING);
+#endif /* CONFIG_MMC_SD_ENABLE_ONLY_DDR50_CUST_SH */
 
 	if (host->quirks & SDHCI_QUIRK_FORCE_DMA)
 		host->flags |= SDHCI_USE_SDMA;

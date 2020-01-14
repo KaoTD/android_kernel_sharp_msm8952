@@ -35,6 +35,9 @@
 
 #include "sched.h"
 
+#ifdef CONFIG_SHSYS_CUST
+extern void notify_big_online(unsigned int sched_boost);
+#endif /* CONFIG_SHSYS_CUST */
 /*
  * Targeted preemption latency for CPU-bound tasks:
  * (default: 6ms * (1 + ilog(ncpus)), units: nanoseconds)
@@ -1807,6 +1810,10 @@ int sched_boost_handler(struct ctl_table *table, int write,
 
 	ret = (sysctl_sched_boost <= 1) ?
 		sched_set_boost(sysctl_sched_boost) : -EINVAL;
+#ifdef CONFIG_SHSYS_CUST
+	if(ret == 0)
+		notify_big_online(sysctl_sched_boost);
+#endif /* CONFIG_SHSYS_CUST */
 
 done:
 	mutex_unlock(&boost_mutex);
@@ -3109,7 +3116,7 @@ static inline int is_cpu_throttling_imminent(int cpu)
 
 static inline int is_task_migration_throttled(struct task_struct *p)
 {
-	u64 delta = sched_clock() - p->run_start;
+	u64 delta = sched_ktime_clock() - p->run_start;
 
 	return delta < sched_min_runtime;
 }
@@ -3856,6 +3863,7 @@ static void enqueue_sleeper(struct cfs_rq *cfs_rq, struct sched_entity *se)
 			}
 
 			trace_sched_stat_blocked(tsk, delta);
+			trace_sched_blocked_reason(tsk);
 
 			/*
 			 * Blocking time is in units of nanosecs, so shift by
@@ -3923,25 +3931,17 @@ static void check_enqueue_throttle(struct cfs_rq *cfs_rq);
 static void
 enqueue_entity(struct cfs_rq *cfs_rq, struct sched_entity *se, int flags)
 {
-	bool renorm = !(flags & ENQUEUE_WAKEUP) || (flags & ENQUEUE_WAKING);
-	bool curr = cfs_rq->curr == se;
-
 	/*
-	 * If we're the current task, we must renormalise before calling
-	 * update_curr().
+	 * Update the normalized vruntime before updating min_vruntime
+	 * through callig update_curr().
 	 */
-	if (renorm && curr)
+	if (!(flags & ENQUEUE_WAKEUP) || (flags & ENQUEUE_WAKING))
 		se->vruntime += cfs_rq->min_vruntime;
 
+	/*
+	 * Update run-time statistics of the 'current'.
+	 */
 	update_curr(cfs_rq);
-
-	/*
-	 * Otherwise, renormalise after, such that we're placed at the current
-	 * moment in time, instead of some random moment in the past.
-	 */
-	if (renorm && !curr)
-		se->vruntime += cfs_rq->min_vruntime;
-
 	enqueue_entity_load_avg(cfs_rq, se, flags & ENQUEUE_WAKEUP);
 	account_entity_enqueue(cfs_rq, se);
 	update_cfs_shares(cfs_rq);
@@ -3953,7 +3953,7 @@ enqueue_entity(struct cfs_rq *cfs_rq, struct sched_entity *se, int flags)
 
 	update_stats_enqueue(cfs_rq, se, !!(flags & ENQUEUE_MIGRATING));
 	check_spread(cfs_rq, se);
-	if (!curr)
+	if (se != cfs_rq->curr)
 		__enqueue_entity(cfs_rq, se);
 	se->on_rq = 1;
 

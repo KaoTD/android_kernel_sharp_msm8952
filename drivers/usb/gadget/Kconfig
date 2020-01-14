@@ -893,6 +893,37 @@ config USB_ANDROID_RNDIS_DWORD_ALIGNED
 	help
 		Provides dword aligned for DMA controller.
 
+# 20141119 USB SHARP CUSTOMIZE ADD START
+config USB_ANDROID_SH_CUST
+        boolean "Sharp Customize for Android Gadget"
+        depends on USB_G_ANDROID
+        help
+         Add sharp's customize for "Android Gadget".
+
+config USB_ANDROID_SH_SERIALS
+        boolean "Android Gadget serial functions for Sharp Devices"
+        depends on USB_ANDROID_SH_CUST
+        default n
+        help
+         Provides serial function for android gadget driver for sharp devices.
+
+config USB_ANDROID_SH_UMS
+	boolean "Android gadget mass storage function(userspace) for sharp devices"
+	depends on USB_ANDROID_SH_CUST
+	default n
+	help
+	  Provides USB mass storage function for android gadget driver.
+	  This is to apply user space drivers for sharp devices.
+
+config USB_ANDROID_SH_MTP
+	boolean "Android gadget MTP function for Sharp Devices"
+	depends on USB_ANDROID_SH_CUST
+	default n
+	help
+	  Provides USB mtp function for android gadget driver.
+
+# 20141119 USB SHARP CUSTOMIZE ADD END
+
 if TTY
 
 config USB_CDC_COMPOSITE

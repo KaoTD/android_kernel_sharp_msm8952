@@ -539,7 +539,7 @@ static int create_bulk_endpoints(struct acc_dev *dev,
 	struct usb_ep *ep;
 	int i;
 
-	DBG(cdev, "create_bulk_endpoints dev: %p\n", dev);
+	DBG(cdev, "create_bulk_endpoints dev: %pK\n", dev);
 
 	ep = usb_ep_autoconfig(cdev->gadget, in_desc);
 	if (!ep) {
@@ -616,8 +616,6 @@ static ssize_t acc_read(struct file *fp, char __user *buf,
 	if (count > BULK_BUFFER_SIZE)
 		count = BULK_BUFFER_SIZE;
 
-	len = ALIGN(count, dev->ep_out->maxpacket);
-
 	/* we will block until we're online */
 	pr_debug("acc_read: waiting for online\n");
 	ret = wait_event_interruptible(dev->read_wq, dev->online);
@@ -625,6 +623,8 @@ static ssize_t acc_read(struct file *fp, char __user *buf,
 		r = ret;
 		goto done;
 	}
+
+	len = ALIGN(count, dev->ep_out->maxpacket);
 
 	if (dev->rx_done) {
 		// last req cancelled. try to get it.
@@ -642,7 +642,7 @@ requeue_req:
 		r = -EIO;
 		goto done;
 	} else {
-		pr_debug("rx %p queue\n", req);
+		pr_debug("rx %pK queue\n", req);
 	}
 
 	/* wait for a request to complete */
@@ -665,7 +665,7 @@ copy_data:
 		if (req->actual == 0)
 			goto requeue_req;
 
-		pr_debug("rx %p %u\n", req, req->actual);
+		pr_debug("rx %pK %u\n", req, req->actual);
 		xfer = (req->actual < count) ? req->actual : count;
 		r = xfer;
 		if (copy_to_user(buf, req->buf, xfer))
@@ -789,7 +789,10 @@ static long acc_ioctl(struct file *fp, unsigned code, unsigned long value)
 
 static int acc_open(struct inode *ip, struct file *fp)
 {
+#ifdef CONFIG_USB_DEBUG_SH_LOG
 	printk(KERN_INFO "acc_open\n");
+#endif /* CONFIG_USB_DEBUG_SH_LOG */
+
 	if (atomic_xchg(&_acc_dev->open_excl, 1))
 		return -EBUSY;
 
@@ -800,7 +803,9 @@ static int acc_open(struct inode *ip, struct file *fp)
 
 static int acc_release(struct inode *ip, struct file *fp)
 {
+#ifdef CONFIG_USB_DEBUG_SH_LOG
 	printk(KERN_INFO "acc_release\n");
+#endif /* CONFIG_USB_DEBUG_SH_LOG */
 
 	WARN_ON(!atomic_xchg(&_acc_dev->open_excl, 0));
 	_acc_dev->disconnected = 0;
@@ -963,7 +968,7 @@ acc_function_bind(struct usb_configuration *c, struct usb_function *f)
 	int			id;
 	int			ret;
 
-	DBG(cdev, "acc_function_bind dev: %p\n", dev);
+	DBG(cdev, "acc_function_bind dev: %pK\n", dev);
 
 	ret = hid_register_driver(&acc_hid_driver);
 	if (ret)
@@ -1129,7 +1134,7 @@ static void acc_hid_work(struct work_struct *data)
 	list_for_each_safe(entry, temp, &new_list) {
 		hid = list_entry(entry, struct acc_hid_dev, list);
 		if (acc_hid_init(hid)) {
-			pr_err("can't add HID device %p\n", hid);
+			pr_err("can't add HID device %pK\n", hid);
 			acc_hid_delete(hid);
 		} else {
 			spin_lock_irqsave(&dev->lock, flags);
@@ -1215,7 +1220,9 @@ static int acc_bind_config(struct usb_configuration *c)
 	struct acc_dev *dev = _acc_dev;
 	int ret;
 
+#ifdef CONFIG_USB_DEBUG_SH_LOG
 	printk(KERN_INFO "acc_bind_config\n");
+#endif /* CONFIG_USB_DEBUG_SH_LOG */
 
 	/* allocate a string ID for our interface */
 	if (acc_string_defs[INTERFACE_STRING_INDEX].id == 0) {

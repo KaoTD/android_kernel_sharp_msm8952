@@ -554,6 +554,27 @@ config KSWAPD_CPU_AFFINITY_MASK
 	  For example to limit kswapd to the first 4 cores use the following:
 	  CONFIG_KSWAPD_CPU_AFFINITY_MASK="f"
 
+config FORCE_SKB_ALLOC_FROM_DMA_ZONE
+	bool "Force SKB allocations to always return ZONE_DMA memory"
+	depends on ZONE_DMA
+	help
+	  Ensure SKB allocations to always return memory from ZONE_DMA.
+	  This option helps ensure that clients who require ZONE_DMA memory are
+	  always using ZONE_DMA memory.
+
+	  If unsure, say "n".
+
+config FORCE_KMALLOC_FROM_DMA_ZONE
+	bool "Force kmalloc to always return ZONE_DMA memory"
+	depends on ZONE_DMA
+	help
+	  Ensure kmalloc to always return memory from ZONE_DMA.
+	  This option helps ensure that clients who require ZONE_DMA memory are
+	  always using ZONE_DMA memory.
+
+	  If unsure, say "n".
+
+
 config PROCESS_RECLAIM
 	bool "Enable process reclaim"
 	depends on PROC_FS
@@ -570,18 +591,12 @@ config PROCESS_RECLAIM
 
 	 Any other vaule is ignored.
 
-config KSWAPD_CPU_AFFINITY_MASK
-        string "kswapd cpu affinity mask"
-        depends on SMP
+config ZPOOL
+	tristate "Common API for compressed memory storage"
+	default n
 	help
-	  Set the cpu affinity for the kswapd task.
-	  There can be power benefits on certain targets when limiting kswapd
-	  to run only on certain cores.
-	  The cpu affinity bitmask is represented by a hex string where commas
-	  group hex digits into chunks.  Each chunk defines exactly 32 bits of
-	  the resultant bitmask.
-	  For example to limit kswapd to the first 4 cores use the following:
-	  CONFIG_KSWAPD_CPU_AFFINITY_MASK="f"
+	  Compressed memory storage API.  This allows using either zbud or
+	  zsmalloc.
 
 config ZSMALLOC
 	bool "Memory allocator for compressed pages"
@@ -605,5 +620,15 @@ config PGTABLE_MAPPING
 	  then you should select this. This causes zsmalloc to use page table
 	  mapping rather than copying for object mapping.
 
-	  You can check speed with zsmalloc benchmark[1].
-	  [1] https://github.com/spartacus06/zsmalloc
+	  You can check speed with zsmalloc benchmark:
+	  https://github.com/spartacus06/zsmapbench
+
+config ZSMALLOC_STAT
+	bool "Export zsmalloc statistics"
+	depends on ZSMALLOC
+	select DEBUG_FS
+	help
+	  This option enables code in the zsmalloc to collect various
+	  statistics about whats happening in zsmalloc and exports that
+	  information to userspace via debugfs.
+	  If unsure, say N.

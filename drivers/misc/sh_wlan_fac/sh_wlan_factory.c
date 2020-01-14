@@ -14,7 +14,7 @@
  */
 
 #include <linux/module.h>
-#include <soc/qcom/sh_smem.h>
+#include <sharp/sh_smem.h>
 
 static char *wlanmac_from_smem = NULL;
 static char wlanmac_from_smem_buf[18];

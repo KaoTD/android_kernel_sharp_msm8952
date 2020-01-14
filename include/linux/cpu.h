@@ -229,6 +229,9 @@ extern struct bus_type cpu_subsys;
 /* Stop CPUs going up and down. */
 
 extern void get_online_cpus(void);
+#ifdef CONFIG_SHSYS_CUST
+extern int get_online_cpus_try(void);
+#endif /* CONFIG_SHSYS_CUST */
 extern void put_online_cpus(void);
 extern void cpu_hotplug_disable(void);
 extern void cpu_hotplug_enable(void);
@@ -257,6 +260,9 @@ static inline void cpu_hotplug_driver_unlock(void)
 #else		/* CONFIG_HOTPLUG_CPU */
 
 #define get_online_cpus()	do { } while (0)
+#ifdef CONFIG_SHSYS_CUST
+#define get_online_cpus_try()  (-1)
+#endif /* CONFIG_SHSYS_CUST */
 #define put_online_cpus()	do { } while (0)
 #define cpu_hotplug_disable()	do { } while (0)
 #define cpu_hotplug_enable()	do { } while (0)

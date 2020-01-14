@@ -451,7 +451,9 @@ static ssize_t ffs_ep0_write(struct file *file, const char __user *buf,
 
 		/* Handle data */
 		if (ffs->state == FFS_READ_DESCRIPTORS) {
+#ifndef CONFIG_USB_ANDROID_SH_CUST
 			pr_info("read descriptors\n");
+#endif /* CONFIG_USB_ANDROID_SH_CUST */
 			ret = __ffs_data_got_descs(ffs, data, len);
 			if (unlikely(ret < 0))
 				break;
@@ -459,7 +461,9 @@ static ssize_t ffs_ep0_write(struct file *file, const char __user *buf,
 			ffs->state = FFS_READ_STRINGS;
 			ret = len;
 		} else {
+#ifndef CONFIG_USB_ANDROID_SH_CUST
 			pr_info("read strings\n");
+#endif /* CONFIG_USB_ANDROID_SH_CUST */
 			ret = __ffs_data_got_strings(ffs, data, len);
 			if (unlikely(ret < 0))
 				break;
@@ -1444,14 +1448,14 @@ static void ffs_data_clear(struct ffs_data *ffs)
 {
 	ENTER();
 
-	pr_debug("%s: ffs->gadget= %p, ffs->flags= %lu\n", __func__,
+	pr_debug("%s: ffs->gadget= %pK, ffs->flags= %lu\n", __func__,
 						ffs->gadget, ffs->flags);
 	if (test_and_clear_bit(FFS_FL_CALL_CLOSED_CALLBACK, &ffs->flags))
 		functionfs_closed_callback(ffs);
 
 	/* Dump ffs->gadget and ffs->flags */
 	if (ffs->gadget)
-		pr_err("%s: ffs:%p ffs->gadget= %p, ffs->flags= %lu\n",
+		pr_err("%s: ffs:%pK ffs->gadget= %pK, ffs->flags= %lu\n",
 				__func__, ffs, ffs->gadget, ffs->flags);
 	BUG_ON(ffs->gadget);
 

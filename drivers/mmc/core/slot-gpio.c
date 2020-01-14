@@ -25,6 +25,14 @@ struct mmc_gpio {
 	char cd_label[0]; /* Must be last entry */
 };
 
+#ifdef CONFIG_MMC_SD_BATTLOG_CUST_SH
+int mmc_cd_check_status(struct mmc_host *host)
+{
+	struct mmc_gpio *p = host->slot.handler_priv;
+	return p->status;
+}
+#endif /* CONFIG_MMC_SD_BATTLOG_CUST_SH */
+
 static int mmc_gpio_get_status(struct mmc_host *host)
 {
 	int ret = -ENOSYS;

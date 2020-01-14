@@ -25,6 +25,7 @@
 
 static struct class *leds_class;
 
+
 static void led_update_brightness(struct led_classdev *led_cdev)
 {
 	if (led_cdev->brightness_get)
@@ -54,6 +55,7 @@ static ssize_t led_brightness_store(struct device *dev,
 		return ret;
 
 	led_cdev->usr_brightness_req = state;
+
 	__led_set_brightness(led_cdev, state);
 
 	return size;
@@ -276,6 +278,7 @@ static int __init leds_init(void)
 	leds_class->suspend = led_suspend;
 	leds_class->resume = led_resume;
 	leds_class->dev_attrs = led_class_attrs;
+
 	return 0;
 }
 

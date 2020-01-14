@@ -130,4 +130,12 @@ static inline int __init rpm_smd_regulator_driver_init(void) { return 0; }
 
 #endif /* CONFIG_REGULATOR_RPM_SMD */
 
+#ifdef CONFIG_SHSYS_CUST_DEBUG
+#ifdef CONFIG_REGULATOR_RPM_SMD
+int sh_rpm_regulator_is_vdd_dig(void* rpm_regulator);
+#else
+static inline int sh_rpm_regulator_is_vdd_dig(void* rpm_regulator) { return 0; }
+#endif
+#endif /* CONFIG_SHSYS_CUST_DEBUG */
+
 #endif

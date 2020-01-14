@@ -19,6 +19,21 @@
 
 #include "power.h"
 
+#ifdef CONFIG_SHSYS_CUST_DEBUG
+#include <linux/module.h>
+enum {
+   SH_DEBUG_WAKEUP_SOURCE = 1U << 0,
+};
+static int sh_debug_mask = 0;
+module_param_named(
+   sh_debug_mask, sh_debug_mask, int, S_IRUGO | S_IWUSR | S_IWGRP
+);
+#endif /* CONFIG_SHSYS_CUST_DEBUG */
+
+#ifdef CONFIG_SH_SLEEP_LOG
+#include <sharp/sh_sleeplog.h>
+#endif /* CONFIG_SH_SLEEP_LOG */
+
 /*
  * If set, the suspend/hibernate code will abort transitions to a sleep state
  * if wakeup events are registered during or immediately before the transition.
@@ -431,6 +446,10 @@ static void wakeup_source_activate(struct wakeup_source *ws)
 	if (WARN(wakeup_source_not_registered(ws),
 			"unregistered wakeup source\n"))
 		return;
+#ifdef CONFIG_SHSYS_CUST_DEBUG
+	if (sh_debug_mask & SH_DEBUG_WAKEUP_SOURCE)
+		pr_info("wake_lock: %s, type 0\n", ws->name);
+#endif /* CONFIG_SHSYS_CUST_DEBUG */
 
 	/*
 	 * active wakeup source should bring the system
@@ -552,6 +571,10 @@ static void wakeup_source_deactivate(struct wakeup_source *ws)
 		return;
 	}
 
+#ifdef CONFIG_SHSYS_CUST_DEBUG
+	if (sh_debug_mask & SH_DEBUG_WAKEUP_SOURCE)
+		pr_info("wake_unlock: %s\n", ws->name);
+#endif /* CONFIG_SHSYS_CUST_DEBUG */
 	ws->active = false;
 
 	now = ktime_get();
@@ -717,7 +740,7 @@ void pm_get_active_wakeup_sources(char *pending_wakeup_source, size_t max)
 
 	rcu_read_lock();
 	list_for_each_entry_rcu(ws, &wakeup_sources, entry) {
-		if (ws->active) {
+		if (ws->active && len < max) {
 			if (!active)
 				len += scnprintf(pending_wakeup_source, max,
 						"Pending Wakeup Sources: ");
@@ -899,6 +922,27 @@ void pm_wakep_autosleep_enabled(bool set)
 }
 #endif /* CONFIG_PM_AUTOSLEEP */
 
+#ifdef CONFIG_SHSYS_CUST_DEBUG
+void print_active_locks(void)
+{
+	struct wakeup_source *ws;
+	if (sh_debug_mask & SH_DEBUG_WAKEUP_SOURCE) {
+		rcu_read_lock();
+		list_for_each_entry_rcu(ws, &wakeup_sources, entry) {
+			if (ws->active)
+			pr_info("active wake lock %s\n", ws->name);
+		}
+		rcu_read_unlock();
+	}
+}
+#endif /* CONFIG_SHSYS_CUST_DEBUG */
+#ifdef CONFIG_SH_SLEEP_LOG
+char *sh_write_buffer_wakeup_sources(char *buffer)
+{
+	return sh_write_buffer_wakeup_sources_internal(buffer, &wakeup_sources);
+}
+#endif /* CONFIG_SH_SLEEP_LOG */
+
 static struct dentry *wakeup_sources_stats_dentry;
 
 /**
@@ -938,7 +982,7 @@ static int print_wakeup_source_stats(struct seq_file *m,
 		active_time = ktime_set(0, 0);
 	}
 
-	ret = seq_printf(m, "%-12s\t%lu\t\t%lu\t\t%lu\t\t%lu\t\t"
+	ret = seq_printf(m, "%-32s\t%lu\t\t%lu\t\t%lu\t\t%lu\t\t"
 			"%lld\t\t%lld\t\t%lld\t\t%lld\t\t%lld\n",
 			ws->name, active_count, ws->event_count,
 			ws->wakeup_count, ws->expire_count,
@@ -959,7 +1003,7 @@ static int wakeup_sources_stats_show(struct seq_file *m, void *unused)
 {
 	struct wakeup_source *ws;
 
-	seq_puts(m, "name\t\tactive_count\tevent_count\twakeup_count\t"
+	seq_puts(m, "name\t\t\t\t\tactive_count\tevent_count\twakeup_count\t"
 		"expire_count\tactive_since\ttotal_time\tmax_time\t"
 		"last_change\tprevent_suspend_time\n");
 

@@ -30,6 +30,15 @@
 #include <sound/info.h>
 #include <sound/control.h>
 
+#ifdef CONFIG_SH_AUDIO_DRIVER /* 22-005 */
+extern int msm_headset_hp_state(void);
+extern int msm_headset_bu_state(void);
+extern int diag_codec_set_bias_mode(int mode);
+#endif /* CONFIG_SH_AUDIO_DRIVER */ /* 22-005 */
+#ifdef CONFIG_SH_AUDIO_DRIVER /* 22-022 */
+extern void msm_codec_set_a2dp_mode(int mode);
+#endif /* CONFIG_SH_AUDIO_DRIVER *//* 22-022 */
+
 /* max number of user-defined controls */
 #define MAX_USER_CONTROLS	32
 #define MAX_CONTROL_COUNT	1028
@@ -149,6 +158,8 @@ void snd_ctl_notify(struct snd_card *card, unsigned int mask,
 	struct snd_kctl_event *ev;
 	
 	if (snd_BUG_ON(!card || !id))
+		return;
+	if (card->shutdown)
 		return;
 	read_lock(&card->ctl_files_rwlock);
 #if defined(CONFIG_SND_MIXER_OSS) || defined(CONFIG_SND_MIXER_OSS_MODULE)
@@ -779,6 +790,45 @@ static int snd_ctl_elem_list(struct snd_card *card,
 		return -EFAULT;
 	return 0;
 }
+
+#ifdef CONFIG_SH_AUDIO_DRIVER /* 22-005 */
+static int snd_ctl_hp_state(struct snd_ctl_elem_hp_state __user *_state)
+{
+
+	struct snd_ctl_elem_hp_state state;
+	state.hp_state = msm_headset_hp_state();
+	state.button_state = msm_headset_bu_state();
+
+	if (copy_to_user(_state, &state, sizeof(state)))
+		return -EFAULT;
+
+	return 0;
+}
+
+static int snd_ctl_set_bias_mode(int __user *_state)
+{
+	int mode;
+	if(get_user(mode, _state)) {
+		return -EFAULT;
+	}
+	diag_codec_set_bias_mode(mode);
+	return 0;
+}
+#endif /* CONFIG_SH_AUDIO_DRIVER */ /* 22-005 */
+
+#ifdef CONFIG_SH_AUDIO_DRIVER /* 22-022 */
+static int snd_ctl_set_a2dp_mode(int __user *_state)
+{
+	int mode;
+
+	if(get_user(mode, _state)){
+		return -EFAULT;
+	}
+	msm_codec_set_a2dp_mode(mode);
+
+	return 0;
+}
+#endif /* CONFIG_SH_AUDIO_DRIVER *//* 22-022 */
 
 static int snd_ctl_elem_info(struct snd_ctl_file *ctl,
 			     struct snd_ctl_elem_info *info)
@@ -1424,6 +1474,16 @@ static long snd_ctl_ioctl(struct file *file, unsigned int cmd, unsigned long arg
 #else
 		return put_user(SNDRV_CTL_POWER_D0, ip) ? -EFAULT : 0;
 #endif
+#ifdef CONFIG_SH_AUDIO_DRIVER /* 22-005 */
+	case SNDRV_CTL_IOCTL_HP_STATE:
+		return snd_ctl_hp_state(argp);
+	case SNDRV_CTL_IOCTL_SET_BIAS_MODE:
+		return snd_ctl_set_bias_mode(ip);
+#endif /* CONFIG_SH_AUDIO_DRIVER */ /* 22-005 */
+#ifdef CONFIG_SH_AUDIO_DRIVER /* 22-022 */
+	case SNDRV_CTL_IOCTL_SET_MODE_A2DP:
+		return snd_ctl_set_a2dp_mode(ip);
+#endif /* CONFIG_SH_AUDIO_DRIVER *//* 22-022 */
 	}
 	down_read(&snd_ioctl_rwsem);
 	list_for_each_entry(p, &snd_control_ioctls, list) {

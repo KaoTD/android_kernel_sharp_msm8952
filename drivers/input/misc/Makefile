@@ -76,7 +76,6 @@ obj-$(CONFIG_SENSORS_LIS3DH)		+= lis3dh_acc.o
 obj-$(CONFIG_SENSORS_AP3426)		+= ap3426.o
 obj-$(CONFIG_SENSORS_BMA2X2)	+= bstclass.o
 
-obj-$(CONFIG_HALL)		+= hall.o
 obj-$(CONFIG_SENSORS_BMA2X2)	+= bma2x2.o
 obj-$(CONFIG_SENSORS_LTR553)	+= ltr553.o
 
@@ -90,5 +89,3 @@ endif
 
 obj-$(CONFIG_SENSORS_MC3430)	+= mc3xxx.o
 obj-$(CONFIG_SENSORS_ISL29044A)	+= isl29044a.o
-
-obj-$(CONFIG_SENSORS_GP2AP030A00F) += proximity_cal.o

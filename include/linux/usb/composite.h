@@ -149,6 +149,11 @@ struct usb_function {
 	void			(*unbind)(struct usb_configuration *,
 					struct usb_function *);
 	void			(*free_func)(struct usb_function *f);
+#ifdef CONFIG_USB_ANDROID_SH_CUST
+	void			(*reset_descriptor)(struct usb_configuration *,
+					struct usb_function *,
+					struct usb_descriptor_header ** , u8);
+#endif /* CONFIG_USB_ANDROID_SH_CUST */
 	struct module		*mod;
 
 	/* runtime state management */

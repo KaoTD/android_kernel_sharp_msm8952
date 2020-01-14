@@ -285,13 +285,18 @@ Optional Properties:
 				detected based on GPIO.
 - qcom,vchg_sns-adc			Phandle of the VADC node.
 - qcom,vchg-adc-channel-id		The ADC channel to which the VCHG is routed.
-- qcom,dp-pulse-count			If present the charger adapter's
-					maximum output is 5.4V. This property
-					indicates maximum number of D+ pulses
-					that can be supplied to the adapter.
 - qcom,override-usb-current		A boolean property to override the ICL limit
 					for USB charger(SDP) based on the current
 					reported by USB driver.
+- qcom,max-pulse-allowed	The maximum number of pulses allowed in
+				HVDCP3 mode. It can be used to restrict VBUS
+				to a value.
+- qcom,use-parallel-aicl	A boolean property to indicate that AICL is run on the
+				parallel slave to detect adapter's ICL capacity. Ideally
+				to be used if the required FCC is greater then 3A and if
+				the parallel slave supports AICL.
+- qcom,parallel-min-main-icl-ma	Minimum ICL allotted to main charger in parallel
+				configuration.
 
 Example:
 	qcom,qpnp-smbcharger {

@@ -45,7 +45,8 @@
 #define of_board_is_xpm()	of_machine_is_compatible("qcom,xpm")
 #define of_board_is_skuf()	of_machine_is_compatible("qcom,skuf")
 #define of_board_is_sbc()	of_machine_is_compatible("qcom,sbc")
-#define of_board_is_sharp_eve()	of_machine_is_compatible("qcom,sharp-eve")
+#define of_board_is_sharp_pa35()	of_machine_is_compatible("qcom,sharp-pa35")
+#define of_board_is_sharp()	of_board_is_sharp_pa35()
 
 #define machine_is_msm8974()	of_machine_is_compatible("qcom,msm8974")
 #define machine_is_msm9625()	of_machine_is_compatible("qcom,msm9625")
@@ -104,7 +105,8 @@
 #define of_board_is_xpm()		0
 #define of_board_is_skuf()		0
 #define of_board_is_sbc()		0
-#define of_board_is_sharp_eve()	0
+#define of_board_is_sharp_pa35()	0
+#define of_board_is_sharp()		0
 
 #define machine_is_msm8974()		0
 #define machine_is_msm9625()		0
@@ -190,6 +192,7 @@ enum msm_cpu {
 struct msm_soc_info {
 	enum msm_cpu generic_soc_type;
 	char *soc_id_string;
+	char *suffix;
 };
 
 enum pmic_model {

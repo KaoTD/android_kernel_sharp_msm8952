@@ -761,10 +761,26 @@ static struct rcg_clk blsp1_qup1_i2c_apps_clk_src = {
 };
 
 static struct clk_freq_tbl ftbl_gcc_blsp1_2_qup1_4_spi_apps_clk[] = {
+#if defined( CONFIG_SHTPS_SY3X00_DEV )
+	F( 400000,	xo,	12,	1,	4),
+	F( 600000,	xo,	8,	1,	4),
+	F( 800000,	xo,	12,	1,	2),
+#endif  /* #if defined( CONFIG_SHTPS_SY3X00_DEV ) */
 	F( 960000,	xo,	10,	1,	2),
+#if defined( CONFIG_SHTPS_SY3X00_DEV )
+	F( 1100000,	gpll0,	17,	1,	43),
+	F( 1720000,	gpll0,	15,	1,	31),
+#endif  /* #if defined( CONFIG_SHTPS_SY3X00_DEV ) */
+
 #if defined( CONFIG_SHUB_ML630Q790 )
 	F( 2000000,	gpll0,	10,	1,	40),
 #endif	/* #if defined( CONFIG_SHUB_ML630Q790 ) */
+
+#if defined( CONFIG_SHTPS_SY3X00_DEV )
+	F( 3200000,	xo,	2,	1,	3),
+	F( 4000000,	gpll0,	10,	1,	20),
+#endif  /* #if defined( CONFIG_SHTPS_SY3X00_DEV ) */
+
 	F( 4800000,	xo,	4,	0,	0),
 	F( 9600000,	xo,	2,	0,	0),
 	F( 16000000,	gpll0,	10,	1,	5),
@@ -1164,9 +1180,17 @@ static struct rcg_clk jpeg0_clk_src = {
 };
 
 static struct clk_freq_tbl ftbl_gcc_camss_mclk0_2_clk[] = {
-
-	F(  6150000,      gpll0,   1,    1,   130),
-	F(  8000000,      gpll0,   1,    1,   100),
+#ifdef CONFIG_MSM_CAMERA_SENSOR /* SH_CAMERA_DRIVER-> */
+	F(  6150000,      gpll0,   1,    1,   130),	// 800000000 / 130 : 6153846
+	F(  6250000,      gpll0,   1,    1,   128),		// ((800000000 / 1) * 1) / 128 : 8691200
+	F(  6950000,      gpll0,   1,    1,   115),		// ((800000000 / 1) * 1) / 115 : 6956000
+	F(  7480000,      gpll0,   1,    1,   107),	// 800000000 / 107 : 7476635
+	F(  7840000,      gpll0,   1,    1,   102),	// 800000000 / 102 : 7843137
+	F(  8000000,      gpll0,   1,    1,   100),	// ((800000000 / 1) * 1) / 100 : 8000000
+	F(  8421053,      gpll0,   1,    1,   95),		// 800000000 / 92 : 8421053
+	F(  8690000,      gpll0,   1,    1,   92),		// 800000000 / 92 : 8695652
+	F( 10000000,      gpll0,   1,    1,   80),		// 800000000 / 80 : 10000000
+#endif  /* SH_CAMERA_DRIVER<- */
 	F( 24000000,	gpll6,	1,	1,	45),
 	F( 66670000,	gpll0,	12,	0,	0),
 	F_END
@@ -1485,6 +1509,20 @@ static struct rcg_clk sdcc1_ice_core_clk_src = {
 	},
 };
 
+#ifdef CONFIG_MMC_SD_ECO_MODE_CUST_SH
+static struct clk_freq_tbl ftbl_gcc_sdcc2_apps_clk[] = {
+	F( 144000,	xo,	16,	3,	25),
+	F( 400000,	xo,	12,	1,	4),
+	F( 20000000,	gpll0,	10,	1,	4),
+	F( 25000000,	gpll0,	16,	1,	2),
+	F( 47000000,	gpll0,	1,	1,	17), /* this is setting for 47Mhz */
+	F( 50000000,	gpll0,	16,	0,	0),
+	F( 100000000,	gpll0,	8,	0,	0),
+	F( 177770000,	gpll0,	4.5,	0,	0),
+	F( 200000000,	gpll0,	4,	0,	0),
+	F_END
+};
+#else /* CONFIG_MMC_SD_ECO_MODE_CUST_SH */
 static struct clk_freq_tbl ftbl_gcc_sdcc2_apps_clk[] = {
 	F( 144000,	xo,	16,	3,	25),
 	F( 400000,	xo,	12,	1,	4),
@@ -1496,6 +1534,7 @@ static struct clk_freq_tbl ftbl_gcc_sdcc2_apps_clk[] = {
 	F( 200000000,	gpll0,	4,	0,	0),
 	F_END
 };
+#endif /* CONFIG_MMC_SD_ECO_MODE_CUST_SH */
 
 static struct rcg_clk sdcc2_apps_clk_src = {
 	.cmd_rcgr_reg =  SDCC2_APPS_CMD_RCGR,

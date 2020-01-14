@@ -273,7 +273,6 @@ static inline void txopt_put(struct ipv6_txoptions *opt)
 		kfree_rcu(opt, rcu);
 }
 
-
 static inline void fl6_sock_release(struct ip6_flowlabel *fl)
 {
 	if (fl)
@@ -323,8 +322,8 @@ static inline int ip6_frag_mem(struct net *net)
 }
 #endif
 
-#define IPV6_FRAG_HIGH_THRESH	(4 * 1024*1024)	/* 4194304 */
-#define IPV6_FRAG_LOW_THRESH	(3 * 1024*1024)	/* 3145728 */
+#define IPV6_FRAG_HIGH_THRESH	(256 * 1024)	/* 262144 */
+#define IPV6_FRAG_LOW_THRESH	(192 * 1024)	/* 196608 */
 #define IPV6_FRAG_TIMEOUT	(60 * HZ)	/* 60 seconds */
 
 extern int __ipv6_addr_type(const struct in6_addr *addr);

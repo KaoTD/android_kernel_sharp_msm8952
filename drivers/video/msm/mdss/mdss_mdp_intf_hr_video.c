@@ -1,4 +1,4 @@
-/* Copyright (c) 2014-2015, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2014-2016, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -594,7 +594,7 @@ int mdss_mdp_hr_video_addr_setup(struct mdss_data_type *mdata,
 
 	for (i = 0; i < count; i++) {
 		head[i].base = mdata->mdp_base + offsets[i];
-		pr_debug("adding Video Intf #%d offset=0x%x virt=%p\n", i,
+		pr_debug("adding Video Intf #%d offset=0x%x virt=%pK\n", i,
 				offsets[i], head[i].base);
 		head[i].ref_cnt = 0;
 		head[i].intf_num = i + MDSS_MDP_INTF0;
@@ -818,10 +818,6 @@ static int mdss_mdp_hr_video_stop(struct mdss_mdp_ctl *ctl,
 	if (ctx->power_on) {
 		ctx->power_on = false;
 		mdp_video_write(ctx, MDSS_MDP_REG_INTF_TIMING_ENGINE_EN, 1);
-		rc = mdss_mdp_ctl_intf_event(ctl, MDSS_EVENT_TOUCHSCREEN_ENABLE,
-			(void*)0);
-		WARN(rc, "intf %d touchscreen error (%d)\n", ctl->intf_num, rc);
-
 		rc = mdss_mdp_ctl_intf_event(ctl, MDSS_EVENT_BLANK, NULL);
 		if (rc == -EBUSY) {
 			pr_debug("intf #%d busy don't turn off\n",
@@ -1070,10 +1066,6 @@ static int mdss_mdp_hr_video_display(struct mdss_mdp_ctl *ctl, void *arg)
 		ctx->timegen_en = true;
 		rc = mdss_mdp_ctl_intf_event(ctl, MDSS_EVENT_PANEL_ON, NULL);
 		WARN(rc, "intf %d panel on error (%d)\n", ctl->intf_num, rc);
-
-		rc = mdss_mdp_ctl_intf_event(ctl, MDSS_EVENT_TOUCHSCREEN_ENABLE, 
-			(void*)1);
-		WARN(rc, "intf %d touchscreen error (%d)\n", ctl->intf_num, rc);
 	} else {
 		mdss_mdp_hr_video_clk_on(ctx);
 		mdss_mdp_queue_commit(ctx);
@@ -1154,7 +1146,7 @@ int mdss_mdp_hr_video_start(struct mdss_mdp_ctl *ctl)
 			pr_err("Intf %d already in use\n", ctl->intf_num);
 			return -EBUSY;
 		}
-		pr_debug("video Intf #%d base=%p", ctx->intf_num, ctx->base);
+		pr_debug("video Intf #%d base=%pK", ctx->intf_num, ctx->base);
 		ctx->ref_cnt++;
 	} else {
 		pr_err("Invalid intf number: %d\n", ctl->intf_num);

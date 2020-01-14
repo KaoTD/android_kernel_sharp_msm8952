@@ -73,13 +73,10 @@
   Clock rates
  */
 &sdhc_2 {
-	qcom,clk-rates = <400000 25000000 50000000 100000000>;
-};
-
-&sdhc_1 {
-	reg-names = "hc_mem", "core_mem";
+	qcom,clk-rates = <400000 25000000 47000000 50000000 100000000 200000000>;
+	qcom,bus-bw-vectors-bps = <0 400000 20000000 25000000 47000000 50000000 100000000 200000000 4294967295>;
 };
 
 &sdcc1_ice {
-	status = "disabled";
+        status = "disabled";
 };

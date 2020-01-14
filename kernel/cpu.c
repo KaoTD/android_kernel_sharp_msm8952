@@ -82,6 +82,21 @@ void get_online_cpus(void)
 }
 EXPORT_SYMBOL_GPL(get_online_cpus);
 
+#ifdef CONFIG_SHSYS_CUST
+int get_online_cpus_try(void)
+{
+	might_sleep();
+	if (cpu_hotplug.active_writer == current)
+		return 0;
+	if (!mutex_trylock(&cpu_hotplug.lock))
+		return -EBUSY;
+	cpu_hotplug.refcount++;
+	mutex_unlock(&cpu_hotplug.lock);
+	return 0;
+}
+EXPORT_SYMBOL_GPL(get_online_cpus_try);
+#endif /* CONFIG_SHSYS_CUST */
+
 void put_online_cpus(void)
 {
 	if (cpu_hotplug.active_writer == current)
@@ -547,6 +562,7 @@ void __weak arch_enable_nonboot_cpus_end(void)
 void __ref enable_nonboot_cpus(void)
 {
 	int cpu, error;
+	struct device *cpu_device;
 
 	/* Allow everyone to use the CPU hotplug again */
 	cpu_maps_update_begin();
@@ -562,6 +578,12 @@ void __ref enable_nonboot_cpus(void)
 		error = _cpu_up(cpu, 1);
 		if (!error) {
 			printk(KERN_INFO "CPU%d is up\n", cpu);
+			cpu_device = get_cpu_device(cpu);
+			if (!cpu_device)
+				pr_err("%s: failed to get cpu%d device\n",
+				       __func__, cpu);
+			else
+				kobject_uevent(&cpu_device->kobj, KOBJ_ONLINE);
 			continue;
 		}
 		printk(KERN_WARNING "Error taking CPU%d up: %d\n", cpu, error);

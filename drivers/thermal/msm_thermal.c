@@ -123,10 +123,19 @@
 		} \
 	} while (0)
 
+#define HW_VER_ADDRESS 0xA4160
+#define HW_VER_SIZE  0x8
+#define HW_VER_SHIFT  20
+#define HW_VER_BIT_MASK 0x1
+#define HW_VER_VALUE 0x1
+
 static struct msm_thermal_data msm_thermal_info;
 static struct delayed_work check_temp_work, retry_hotplug_work;
 static bool core_control_enabled;
 static uint32_t cpus_offlined;
+#ifdef CONFIG_SHSYS_CUST
+static uint32_t big_online;
+#endif /* CONFIG_SHSYS_CUST */
 static cpumask_var_t cpus_previously_online;
 static DEFINE_MUTEX(core_control_mutex);
 static struct kobject *cc_kobj;
@@ -206,6 +215,8 @@ static u32 tsens_temp_print;
 static uint32_t bucket;
 static cpumask_t throttling_mask;
 static int tsens_scaling_factor = SENSOR_SCALING_FACTOR;
+static int therm_hw_version;
+static bool therm_hw_ver_enable;
 
 static LIST_HEAD(devices_list);
 static LIST_HEAD(thresholds_list);
@@ -3713,6 +3724,8 @@ init_freq_thread:
 		pr_err("Failed to create frequency mitigation thread. err:%ld\n",
 				PTR_ERR(freq_mitigation_task));
 		return;
+	} else {
+		complete(&freq_mitigation_complete);
 	}
 }
 
@@ -4647,6 +4660,63 @@ static int msm_thermal_notify(enum thermal_trip_type type, int temp, void *data)
 	return 0;
 }
 
+static ssize_t hw_version_show(
+	struct kobject *kobj, struct kobj_attribute *attr, char *buf)
+{
+	return (snprintf(buf, PAGE_SIZE, "%d\n", therm_hw_version));
+}
+
+static struct kobj_attribute hw_ver_attr =
+__ATTR_RO(hw_version);
+
+static int create_hw_ver_sysfs(void)
+{
+	void __iomem *efuse_base = NULL;
+	u32 efuse_bits = 0;
+	int bin = 0, ret = 0;
+	struct kobject *module_kobj = NULL;
+	char *key = NULL;
+
+	if (!msm_thermal_probed) {
+		therm_hw_ver_enable = true;
+		return ret;
+	}
+
+	key = "qcom,therm-hw-version-enable";
+	if (!of_property_read_bool(msm_thermal_info.pdev->dev.of_node,
+		key))
+		return ret;
+
+	efuse_base = ioremap(HW_VER_ADDRESS, HW_VER_SIZE);
+	if (!efuse_base)
+		return -EINVAL;
+
+	efuse_bits = readl_relaxed(efuse_base);
+	iounmap(efuse_base);
+	bin = (efuse_bits >> HW_VER_SHIFT) & HW_VER_BIT_MASK;
+
+	pr_debug("thermal hw_version:%d\n", bin);
+
+	if (bin == HW_VER_VALUE) {
+		/* create new sysfs entry */
+		module_kobj = kset_find_obj(module_kset, KBUILD_MODNAME);
+		if (!module_kobj) {
+			pr_err("cannot find kobject\n");
+			return -ENOENT;
+		}
+
+		sysfs_attr_init(&hw_ver_attr.attr);
+		ret = sysfs_create_file(module_kobj, &hw_ver_attr.attr);
+		if (ret) {
+			pr_err("cannot create hw_ver kobj\n");
+			return ret;
+		}
+		therm_hw_version = 1;
+	}
+
+	return 0;
+}
+
 int sensor_mgr_init_threshold(struct device *dev,
 	struct threshold_info *thresh_inp,
 	int sensor_id, int32_t high_temp, int32_t low_temp,
@@ -4942,6 +5012,9 @@ static int __ref set_enabled(const char *val, const struct kernel_param *kp)
 			ktm_prog_thresh_enabled = false;
 		}
 		interrupt_mode_init();
+#ifdef CONFIG_SHSYS_CUST
+		complete(&freq_mitigation_complete);
+#endif /* CONFIG_SHSYS_CUST */
 	} else {
 		pr_info("no action for enabled = %d\n",
 			enabled);
@@ -5065,17 +5138,54 @@ done_cc:
 	return count;
 }
 
+#ifdef CONFIG_SHSYS_CUST
+static ssize_t show_big_online(struct kobject *kobj,
+		struct kobj_attribute *attr, char *buf)
+{
+	return snprintf(buf, PAGE_SIZE, "%d\n", big_online);
+}
+
+static ssize_t __ref store_big_online(struct kobject *kobj,
+		struct kobj_attribute *attr, const char *buf, size_t count)
+{
+	int ret = 0;
+
+	ret = kstrtouint(buf, 10, &big_online);
+	sysfs_notify(kobj, NULL, "big_online");
+	return big_online;
+}
+#endif /* CONFIG_SHSYS_CUST */
+
 static __refdata struct kobj_attribute cc_enabled_attr =
 __ATTR(enabled, 0644, show_cc_enabled, store_cc_enabled);
 
 static __refdata struct kobj_attribute cpus_offlined_attr =
 __ATTR(cpus_offlined, 0644, show_cpus_offlined, store_cpus_offlined);
 
+#ifdef CONFIG_SHSYS_CUST
+static __refdata struct kobj_attribute big_online_attr =
+__ATTR(big_online, 0640, show_big_online, store_big_online);
+#endif /* CONFIG_SHSYS_CUST */
+
 static __refdata struct attribute *cc_attrs[] = {
 	&cc_enabled_attr.attr,
 	&cpus_offlined_attr.attr,
+#ifdef CONFIG_SHSYS_CUST
+	&big_online_attr.attr,
+#endif /* CONFIG_SHSYS_CUST */
 	NULL,
 };
+
+#ifdef CONFIG_SHSYS_CUST
+void notify_big_online(unsigned int sched_boost)
+{
+	char buf[10];
+
+	snprintf(buf, sizeof(buf), "%u%c", sched_boost, '\0');
+	pr_debug("notify_big_online: sched_boost %u buf %s\n", sched_boost, buf);
+	store_big_online(cc_kobj, &big_online_attr, buf, sizeof(buf));
+}
+#endif /* CONFIG_SHSYS_CUST */
 
 static __refdata struct attribute_group cc_attr_group = {
 	.attrs = cc_attrs,
@@ -6023,6 +6133,13 @@ static int probe_vdd_mx(struct device_node *node,
 	if (ret)
 		goto read_node_done;
 
+	/*
+	 * Monitor only this sensor if defined, otherwise monitor all tsens
+	 */
+	key = "qcom,mx-restriction-sensor_id";
+	if (of_property_read_u32(node, key, &data->vdd_mx_sensor_id))
+		data->vdd_mx_sensor_id = MONITOR_ALL_TSENS;
+
 	vdd_mx = devm_regulator_get(&pdev->dev, "vdd-mx");
 	if (IS_ERR_OR_NULL(vdd_mx)) {
 		ret = PTR_ERR(vdd_mx);
@@ -6035,7 +6152,7 @@ static int probe_vdd_mx(struct device_node *node,
 
 	ret = sensor_mgr_init_threshold(&pdev->dev,
 			&thresh[MSM_VDD_MX_RESTRICTION],
-			MONITOR_ALL_TSENS,
+			data->vdd_mx_sensor_id,
 			data->vdd_mx_temp_degC + data->vdd_mx_temp_hyst_degC,
 			data->vdd_mx_temp_degC, vdd_mx_notify);
 
@@ -7169,6 +7286,9 @@ static void thermal_mx_config_read(struct seq_file *m, void *data)
 				+ msm_thermal_info.vdd_mx_temp_hyst_degC);
 		seq_printf(m, "retention value:%d\n",
 				msm_thermal_info.vdd_mx_min);
+		if (msm_thermal_info.vdd_mx_sensor_id != MONITOR_ALL_TSENS)
+			seq_printf(m, "tsens sensor:tsens_tz_sensor%d\n",
+				msm_thermal_info.vdd_mx_sensor_id);
 	}
 }
 
@@ -7544,6 +7664,11 @@ static int msm_thermal_dev_probe(struct platform_device *pdev)
 		interrupt_mode_enable = false;
 	}
 
+	if (therm_hw_ver_enable) {
+		create_hw_ver_sysfs();
+		therm_hw_ver_enable = false;
+	}
+
 	return ret;
 fail:
 	if (ret)
@@ -7558,6 +7683,7 @@ static int msm_thermal_dev_exit(struct platform_device *inp_dev)
 {
 	int i = 0;
 	struct thermal_progressive_rule *prog = NULL, *next_prog = NULL;
+	struct kobject *module_kobj = NULL;
 
 	unregister_reboot_notifier(&msm_thermal_reboot_notifier);
 	if (msm_therm_debugfs && msm_therm_debugfs->parent)
@@ -7609,6 +7735,10 @@ static int msm_thermal_dev_exit(struct platform_device *inp_dev)
 		devm_kfree(&inp_dev->dev, prog);
 		prog = NULL;
 	}
+
+	module_kobj = kset_find_obj(module_kset, KBUILD_MODNAME);
+	if (module_kobj)
+		sysfs_remove_file(module_kobj, &hw_ver_attr.attr);
 
 	return 0;
 }
@@ -7667,6 +7797,7 @@ int __init msm_thermal_late_init(void)
 	create_cpu_topology_sysfs();
 	create_thermal_debugfs();
 	msm_thermal_add_bucket_info_nodes();
+	create_hw_ver_sysfs();
 	return 0;
 }
 late_initcall(msm_thermal_late_init);

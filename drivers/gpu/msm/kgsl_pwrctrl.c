@@ -47,7 +47,7 @@
 #define MAX_UDELAY		2000
 
 /* Number of jiffies for a full thermal cycle */
-#define TH_HZ			(HZ/5)
+#define TH_HZ			20
 
 #define KGSL_MAX_BUSLEVELS	20
 
@@ -1564,7 +1564,7 @@ int kgsl_pwrctrl_init(struct kgsl_device *device)
 
 	pwr->power_flags = 0;
 
-	pwr->interval_timeout = msecs_to_jiffies(pdata->idle_timeout);
+	pwr->interval_timeout = pdata->idle_timeout;
 	pwr->strtstp_sleepwake = pdata->strtstp_sleepwake;
 
 	if (kgsl_property_read_u32(device, "qcom,pm-qos-active-latency",
@@ -1593,7 +1593,7 @@ int kgsl_pwrctrl_init(struct kgsl_device *device)
 
 		if (!pwr->ocmem_pcl) {
 			KGSL_PWR_ERR(device,
-				"msm_bus_scale_register_client failed: id %d table %p",
+				"msm_bus_scale_register_client failed: id %d table %pK",
 				device->id, ocmem_scale_table);
 			result = -EINVAL;
 			goto done;
@@ -1643,7 +1643,7 @@ int kgsl_pwrctrl_init(struct kgsl_device *device)
 				(pdata->bus_scale_table);
 		if (!pwr->pcl) {
 			KGSL_PWR_ERR(device,
-				"msm_bus_scale_register_client failed: id %d table %p",
+				"msm_bus_scale_register_client failed: id %d table %pK",
 				device->id, pdata->bus_scale_table);
 			result = -EINVAL;
 			goto done;

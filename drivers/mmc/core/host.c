@@ -29,14 +29,34 @@
 #include <linux/mmc/card.h>
 #include <linux/mmc/slot-gpio.h>
 #include <trace/events/mmc.h>
-#include <soc/qcom/socinfo.h>
 
 #include "core.h"
 #include "host.h"
 
+#ifdef CONFIG_CLOCKTIME_MMC_CUST_SH
+#ifdef CONFIG_ARM_ARCH_TIMER
+#include <asm/arch_timer.h>
+#else /* CONFIG_ARM_ARCH_TIMER */
+#include "../timer.h"
+#endif /* CONFIG_ARM_ARCH_TIMER */
+
+int64_t sh_mmc_timer_get_sclk_time(void)
+{
+	int64_t rc = 0;
+#ifdef CONFIG_ARM_ARCH_TIMER
+	rc = (int64_t)arch_counter_get_cntpct() * 53;
+#else /* CONFIG_ARM_ARCH_TIMER */
+	rc = msm_timer_get_sclk_time(NULL);
+#endif /* CONFIG_ARM_ARCH_TIMER */
+	return rc;
+}
+#endif /* CLOCKTIME_MMC_CUST_SH */
+
 #define cls_dev_to_mmc_host(d)	container_of(d, struct mmc_host, class_dev)
 
-bool mmc_sd_pending_resume = false;
+#ifdef CONFIG_MMC_SD_PENDING_RESUME_CUST_SH
+bool sh_mmc_pending_resume = false;
+#endif /* CONFIG_MMC_SD_PENDING_RESUME_CUST_SH */
 
 static void mmc_host_classdev_release(struct device *dev)
 {
@@ -56,6 +76,9 @@ static int mmc_host_runtime_suspend(struct device *dev)
 	if (!mmc_use_core_runtime_pm(host))
 		return 0;
 
+	if (mmc_bus_needs_resume(host))
+		goto out;
+
 	if (host->card && host->card->cmdq_init) {
 		BUG_ON(host->cmdq_ctx.active_reqs);
 
@@ -71,10 +94,16 @@ static int mmc_host_runtime_suspend(struct device *dev)
 		mmc_host_clk_release(host);
 	}
 
+#ifdef CONFIG_PM_EMMC_CUST_SH
+	if (!(host->card && mmc_card_mmc(host->card))) {
+#endif /* CONFIG_PM_EMMC_CUST_SH */
 	ret = mmc_suspend_host(host);
 	if (ret < 0 && ret != -ENOMEDIUM)
 		pr_err("%s: %s: suspend host failed: %d\n", mmc_hostname(host),
 		       __func__, ret);
+#ifdef CONFIG_PM_EMMC_CUST_SH
+	}
+#endif /* CONFIG_PM_EMMC_CUST_SH */
 	/* reset CQE state if host suspend fails */
 	if (ret < 0 && host->card && host->card->cmdq_init) {
 		mmc_card_clr_suspended(host->card);
@@ -121,6 +150,9 @@ static int mmc_host_runtime_resume(struct device *dev)
 	if (!mmc_use_core_runtime_pm(host))
 		return 0;
 
+#ifdef CONFIG_PM_EMMC_CUST_SH
+	if (!(host->card && mmc_card_mmc(host->card))) {
+#endif /* CONFIG_PM_EMMC_CUST_SH */
 	ret = mmc_resume_host(host);
 	if (ret < 0) {
 		pr_err("%s: %s: resume host: failed: ret: %d\n",
@@ -128,6 +160,12 @@ static int mmc_host_runtime_resume(struct device *dev)
 		if (pm_runtime_suspended(dev))
 			BUG_ON(1);
 	}
+#ifdef CONFIG_PM_EMMC_CUST_SH
+	}
+#endif /* CONFIG_PM_EMMC_CUST_SH */
+
+	if (mmc_bus_needs_resume(host))
+		goto out;
 
 	if (host->card && !ret && mmc_card_cmdq(host->card)) {
 		ret = mmc_cmdq_halt(host, false);
@@ -137,6 +175,7 @@ static int mmc_host_runtime_resume(struct device *dev)
 			mmc_card_clr_suspended(host->card);
 	}
 
+out:
 	trace_mmc_host_runtime_resume(mmc_hostname(host), ret,
 			ktime_to_us(ktime_sub(ktime_get(), start)));
 	return ret;
@@ -153,6 +192,9 @@ static int mmc_host_suspend(struct device *dev)
 	if (!mmc_use_core_pm(host))
 		return 0;
 
+	if (mmc_bus_needs_resume(host))
+		goto out;
+
 	spin_lock_irqsave(&host->clk_lock, flags);
 	/*
 	 * let the driver know that suspend is in progress and must
@@ -160,6 +202,18 @@ static int mmc_host_suspend(struct device *dev)
 	 */
 	host->dev_status = DEV_SUSPENDING;
 	spin_unlock_irqrestore(&host->clk_lock, flags);
+
+#ifdef CONFIG_MMC_SD_PENDING_RESUME_CUST_SH
+	if (strncmp(mmc_hostname(host), HOST_MMC_SD, sizeof(HOST_MMC_SD)) == 0) {
+		if (!pm_runtime_suspended(dev) && sh_mmc_pending_resume == false) {
+			ret = mmc_suspend_host(host);
+			if (ret < 0)
+				pr_err("%s: %s: failed: ret: %d\n", mmc_hostname(host),
+						__func__, ret);
+		}
+		sh_mmc_pending_resume = false;
+	} else {
+#endif /* CONFIG_MMC_SD_PENDING_RESUME_CUST_SH */
 	if (!pm_runtime_suspended(dev)) {
 		if (host->card && host->card->cmdq_init) {
 			if (!mmc_try_claim_host(host)) {
@@ -179,14 +233,6 @@ static int mmc_host_suspend(struct device *dev)
 			mmc_host_clk_hold(host);
 			host->cmdq_ops->disable(host, true);
 			mmc_host_clk_release(host);
-		}
-		if ((of_board_is_sharp_eve()) && host->card &&
-			(mmc_card_sd(host->card))) {
-			if (mmc_sd_pending_resume) {
-				mmc_sd_pending_resume = false;
-				host->dev_status = DEV_SUSPENDED;
-				return 0;
-			}
 		}
 		ret = mmc_suspend_host(host);
 		if (ret < 0)
@@ -210,6 +256,10 @@ static int mmc_host_suspend(struct device *dev)
 		if (host->card && host->card->cmdq_init)
 			mmc_release_host(host);
 	}
+#ifdef CONFIG_MMC_SD_PENDING_RESUME_CUST_SH
+	}
+#endif /* CONFIG_MMC_SD_PENDING_RESUME_CUST_SH */
+
 	/*
 	 * If SDIO function driver doesn't want to power off the card,
 	 * atleast turn off clocks to allow deep sleep.
@@ -242,13 +292,16 @@ static int mmc_host_resume(struct device *dev)
 		return 0;
 
 	if (!pm_runtime_suspended(dev)) {
-		if ((of_board_is_sharp_eve()) && host->card &&
-			(mmc_card_sd(host->card))) {
-			mmc_sd_pending_resume = true;
-			host->dev_status = DEV_RESUMED;
-			return 0;
-		}
+#ifdef CONFIG_MMC_SD_PENDING_RESUME_CUST_SH
+		if (strncmp(mmc_hostname(host), HOST_MMC_SD,
+			sizeof(HOST_MMC_SD)) == 0) {
+			sh_mmc_pending_resume = true;
+		} else {
+#endif /* CONFIG_MMC_SD_PENDING_RESUME_CUST_SH */
 		ret = mmc_resume_host(host);
+		if (!ret && mmc_bus_needs_resume(host))
+			goto out;
+
 		if (ret < 0) {
 			pr_err("%s: %s: failed: ret: %d\n", mmc_hostname(host),
 			       __func__, ret);
@@ -260,9 +313,13 @@ static int mmc_host_resume(struct device *dev)
 			else
 				mmc_card_clr_suspended(host->card);
 		}
+#ifdef CONFIG_MMC_SD_PENDING_RESUME_CUST_SH
+		}
+#endif /* CONFIG_MMC_SD_PENDING_RESUME_CUST_SH */
 	}
 	host->dev_status = DEV_RESUMED;
 
+out:
 	return ret;
 }
 #endif
@@ -400,7 +457,16 @@ void mmc_host_clk_hold(struct mmc_host *host)
 		mmc_ungate_clock(host);
 
 		/* Reset clock scaling stats as host is out of idle */
+#ifdef CONFIG_KEEP_CLK_SCALING_PARAM_EMMC_CUST_SH
+		if (!strncmp(mmc_hostname(host), HOST_MMC_MMC, sizeof(HOST_MMC_MMC))) {
+			if (host->clk_scaling.state == MMC_LOAD_LOW)
+				mmc_reset_clk_scale_stats(host);
+		} else {
+			mmc_reset_clk_scale_stats(host);
+		}
+#else /* CONFIG_KEEP_CLK_SCALING_PARAM_EMMC_CUST_SH */
 		mmc_reset_clk_scale_stats(host);
+#endif /* CONFIG_KEEP_CLK_SCALING_PARAM_EMMC_CUST_SH */
 		spin_lock_irqsave(&host->clk_lock, flags);
 		pr_debug("%s: ungated MCI clock\n", mmc_hostname(host));
 	}
@@ -1068,7 +1134,7 @@ void mmc_free_host(struct mmc_host *host)
 	idr_remove(&mmc_host_idr, host->index);
 	spin_unlock(&mmc_host_lock);
 	wake_lock_destroy(&host->detect_wake_lock);
-
+	kfree(host->wlock_name);
 	put_device(&host->class_dev);
 }
 

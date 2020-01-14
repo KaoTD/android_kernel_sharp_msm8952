@@ -356,4 +356,9 @@ static inline const char *usb_phy_type_string(enum usb_phy_type type)
 		return "UNKNOWN PHY TYPE";
 	}
 }
+
+#ifdef CONFIG_USB_MSM_OTG_SH_CUST
+extern int msm_otg_is_usb_host_running(void);
+#endif /* CONFIG_USB_MSM_OTG_SH_CUST */
+
 #endif /* __LINUX_USB_PHY_H */

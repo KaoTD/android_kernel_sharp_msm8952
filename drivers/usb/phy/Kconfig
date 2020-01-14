@@ -324,6 +324,26 @@ config USB_ULPI_VIEWPORT
 	  Provides read/write operations to the ULPI phy register set for
 	  controllers with a viewport register (e.g. Chipidea/ARC controllers).
 
+config USB_MSM_OTG_SH_CUST
+        boolean "Sharp Custamize for msm otg ---> "
+        depends on USB_MSM_OTG && USB_ANDROID_SH_CUST
+        help
+         Add sharp custamize for "msm otg".
+
+config USB_MSM_OTG_SH_CUST_CHARGE
+    bool "Charger for USB Sharp customize"
+    depends on USB_MSM_OTG_SH_CUST && BATTERY_SH
+    default n
+    help
+	  Enable this to support sharp customize charger.
+
+config USB_DWC3_LIMIT_LOCK
+	bool "Support for limitlock"
+	depends on USB_MSM_OTG_SH_CUST && CPU_FREQ
+	default n
+	help
+		Enable this to support the limit lock.
+
 config DUAL_ROLE_USB_INTF
 	bool "Generic DUAL ROLE sysfs interface"
 	depends on SYSFS && USB_PHY

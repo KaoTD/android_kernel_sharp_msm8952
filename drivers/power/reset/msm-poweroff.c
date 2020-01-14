@@ -32,10 +32,6 @@
 #include <soc/qcom/restart.h>
 #include <soc/qcom/watchdog.h>
 
-#if defined(CONFIG_SHARP_HANDLE_PANIC)
-#include <soc/qcom/sharp/shrlog_hooks.h>
-#endif /* CONFIG_SHARP_HANDLE_PANIC */
-
 #define EMERGENCY_DLOAD_MAGIC1    0x322A4F99
 #define EMERGENCY_DLOAD_MAGIC2    0xC67E4350
 #define EMERGENCY_DLOAD_MAGIC3    0x77777777
@@ -56,9 +52,27 @@ static bool scm_deassert_ps_hold_supported;
 static void __iomem *msm_ps_hold;
 static phys_addr_t tcsr_boot_misc_detect;
 
+#ifdef CONFIG_SH_SHUTDOWN_FAILSAFE
+static void android_shutdown_work(struct work_struct *work);
+static void kernel_shutdown_work(struct work_struct *work);
+static void android_restart_work(struct work_struct *work);
+static void kernel_restart_work(struct work_struct *work);
+static int emergency_set(const char *val, struct kernel_param *kp);
+DECLARE_DELAYED_WORK(android_shutdown_struct, android_shutdown_work);
+DECLARE_DELAYED_WORK(kernel_shutdown_struct, kernel_shutdown_work);
+DECLARE_DELAYED_WORK(android_restart_struct, android_restart_work);
+DECLARE_DELAYED_WORK(kernel_restart_struct, kernel_restart_work);
+static int emergency_mode = 0;
+module_param_call(emergency_mode, emergency_set, param_get_int, &emergency_mode, 0664);
+#endif
+
 #ifdef CONFIG_MSM_DLOAD_MODE
 #define EDL_MODE_PROP "qcom,msm-imem-emergency_download_mode"
 #define DL_MODE_PROP "qcom,msm-imem-download_mode"
+
+#ifdef CONFIG_SHBOOT_CUST
+#define SH_SCM_DOWNLOAD_MODE	0x40
+#endif /* CONFIG_SHBOOT_CUST */
 
 static int in_panic;
 static void *dload_mode_addr;
@@ -67,8 +81,13 @@ static void *emergency_dload_mode_addr;
 static bool scm_dload_supported;
 
 static int dload_set(const char *val, struct kernel_param *kp);
-/* Set download_mode as disabled by default */
+
+#ifdef CONFIG_SHLOG_SYSTEM
 static int download_mode = 0;
+#else /* CONFIG_SHLOG_SYSTEM */
+static int download_mode = 1;
+#endif /* CONFIG_SHLOG_SYSTEM */
+
 module_param_call(download_mode, dload_set, param_get_int,
 			&download_mode, 0644);
 static int panic_prep_restart(struct notifier_block *this,
@@ -123,11 +142,30 @@ static void set_dload_mode(int on)
 	dload_mode_enabled = on;
 }
 
+#ifdef CONFIG_SHBOOT_CUST
+static void sh_set_dload_mode(int on)
+{
+	int ret;
+
+	if (dload_mode_addr) {
+		__raw_writel(on ? 0x1F2E3D4C : 0, dload_mode_addr);
+		__raw_writel(on ? 0xB4A56978 : 0,
+		       dload_mode_addr + sizeof(unsigned int));
+		mb();
+	}
+
+	ret = scm_set_dload_mode(on ? SH_SCM_DOWNLOAD_MODE : 0, 0);
+	if (ret)
+		pr_err("Failed to set secure DLOAD mode: %d\n", ret);
+}
+#endif /* CONFIG_SHBOOT_CUST */
+
 static bool get_dload_mode(void)
 {
 	return dload_mode_enabled;
 }
 
+#if 0
 static void enable_emergency_dload_mode(void)
 {
 	int ret;
@@ -152,6 +190,7 @@ static void enable_emergency_dload_mode(void)
 	if (ret)
 		pr_err("Failed to set secure EDLOAD mode: %d\n", ret);
 }
+#endif
 
 static int dload_set(const char *val, struct kernel_param *kp)
 {
@@ -175,6 +214,10 @@ static int dload_set(const char *val, struct kernel_param *kp)
 }
 #else
 #define set_dload_mode(x) do {} while (0)
+
+#ifdef CONFIG_SHBOOT_CUST
+#define sh_set_dload_mode(x) do {} while (0)
+#endif /* CONFIG_SHBOOT_CUST */
 
 static void enable_emergency_dload_mode(void)
 {
@@ -232,10 +275,9 @@ static void msm_restart_prepare(const char *cmd)
 			(in_panic || restart_mode == RESTART_DLOAD));
 #endif
 
-#ifdef CONFIG_SHARP_HANDLE_PANIC
-	if (shrlog_is_enabled())
-		sharp_panic_clear_restart_reason();
-#endif /* CONFIG_SHARP_HANDLE_PANIC */
+#ifdef CONFIG_SHLOG_SYSTEM
+	__raw_writel(0x00000000, restart_reason);
+#endif
 
 	if (qpnp_pon_check_hard_reset_stored()) {
 		/* Set warm reset as true when device is in dload mode
@@ -245,18 +287,33 @@ static void msm_restart_prepare(const char *cmd)
 			((cmd != NULL && cmd[0] != '\0') &&
 			strcmp(cmd, "recovery") &&
 			strcmp(cmd, "bootloader") &&
-			strcmp(cmd, "rtc")))
+			strcmp(cmd, "rtc") &&
+			strcmp(cmd, "dm-verity device corrupted") &&
+			strcmp(cmd, "dm-verity enforcing") &&
+			strcmp(cmd, "keys clear")))
 			need_warm_reset = true;
+#ifdef CONFIG_SHLOG_SYSTEM
+		if( (need_warm_reset != true) && (cmd != NULL) && (cmd[0] != '\0') ){
+		    if( !strncmp(cmd, "emergency", 9) ){
+			need_warm_reset = true;
+		    }
+		    else if( !strncmp(cmd, "surfaceflinger", 14) ){
+			need_warm_reset = true;
+		    }
+		}
+#endif /* CONFIG_SHLOG_SYSTEM */
 	} else {
 		need_warm_reset = (get_dload_mode() ||
 				(cmd != NULL && cmd[0] != '\0'));
 	}
 
-#if defined(CONFIG_SHARP_HANDLE_PANIC)
-	if (shrlog_is_enabled() && (need_warm_reset == false)) {
-		need_warm_reset = sharp_panic_needs_warm_reset(cmd, get_dload_mode(), restart_mode, in_panic);
+#if defined(CONFIG_SHARP_FORCE_HARDRESET_FOR_USERREQUESTED)
+	if ( (need_warm_reset == true)
+			&& (cmd != NULL)
+			&& !strcmp(cmd, "userrequested")) {
+		need_warm_reset = false;
 	}
-#endif /* CONFIG_SHARP_HANDLE_PANIC */
+#endif /* CONFIG_SHARP_FORCE_HARDRESET_FOR_USERREQUESTED */
 
 	/* Hard reset the PMIC unless memory contents must be maintained. */
 	if (need_warm_reset) {
@@ -274,10 +331,34 @@ static void msm_restart_prepare(const char *cmd)
 			qpnp_pon_set_restart_reason(
 				PON_RESTART_REASON_RECOVERY);
 			__raw_writel(0x77665502, restart_reason);
+#ifdef CONFIG_SHLOG_SYSTEM
+		} else if (!strncmp(cmd, "emergency", 9)) {
+			if ( ! get_dload_mode() ){
+				qpnp_pon_set_restart_reason(PON_RESTART_REASON_EMERGENCY_NODLOAD);
+			}
+			if (restart_mode == RESTART_MODEM_CRASH) {
+				__raw_writel(0x77665595, restart_reason);
+			} else if (restart_mode == RESTART_L1_ERROR) {
+				__raw_writel(0x77665593, restart_reason);
+			} else {
+				__raw_writel(0x77665590, restart_reason);
+			}
+		} else if (!strncmp(cmd, "surfaceflinger", 14)) {
+			if ( ! get_dload_mode() ){
+				qpnp_pon_set_restart_reason(PON_RESTART_REASON_EMERGENCY_NODLOAD);
+			}
+			__raw_writel(0x77665594, restart_reason);
+#endif /* CONFIG_SHLOG_SYSTEM */
 		} else if (!strcmp(cmd, "rtc")) {
 			qpnp_pon_set_restart_reason(
 				PON_RESTART_REASON_RTC);
 			__raw_writel(0x77665503, restart_reason);
+		} else if (!strcmp(cmd, "dm-verity device corrupted")) {
+			__raw_writel(0x77665508, restart_reason);
+		} else if (!strcmp(cmd, "dm-verity enforcing")) {
+			__raw_writel(0x77665509, restart_reason);
+		} else if (!strcmp(cmd, "keys clear")) {
+			__raw_writel(0x7766550a, restart_reason);
 		} else if (!strncmp(cmd, "oem-", 4)) {
 			unsigned long code;
 			int ret;
@@ -285,17 +366,18 @@ static void msm_restart_prepare(const char *cmd)
 			if (!ret)
 				__raw_writel(0x6f656d00 | (code & 0xff),
 					     restart_reason);
+#if 0
 		} else if (!strncmp(cmd, "edl", 3)) {
 			enable_emergency_dload_mode();
+#endif
+#if defined(CONFIG_MSM_DLOAD_MODE) && defined(CONFIG_SHBOOT_CUST)
+		} else if (!strncmp(cmd, "downloader", 10)) {
+			sh_set_dload_mode(1);
+#endif /* CONFIG_MSM_DLOAD_MODE && CONFIG_SHBOOT_CUST */
 		} else {
 			__raw_writel(0x77665501, restart_reason);
 		}
 	}
-
-#if defined(CONFIG_SHARP_HANDLE_PANIC)
-	if (shrlog_is_enabled())
-		sharp_panic_set_restart_reason(cmd, get_dload_mode(), restart_mode, in_panic);
-#endif /* CONFIG_SHARP_HANDLE_PANIC */
 
 	flush_cache_all();
 
@@ -382,6 +464,11 @@ static void do_msm_poweroff(void)
 #ifdef CONFIG_MSM_DLOAD_MODE
 	set_dload_mode(0);
 #endif
+
+#ifdef CONFIG_SHLOG_SYSTEM
+	__raw_writel(0x00000000, restart_reason);
+#endif /* CONFIG_SHLOG_SYSTEM */
+
 	qpnp_pon_system_pwr_off(PON_POWER_OFF_SHUTDOWN);
 	/* Needed to bypass debug image on some chips */
 	if (!is_scm_armv8())
@@ -400,6 +487,57 @@ static void do_msm_poweroff(void)
 	pr_err("Powering off has failed\n");
 	return;
 }
+
+#ifdef CONFIG_SH_SHUTDOWN_FAILSAFE
+static void android_shutdown_work(struct work_struct *work)
+{
+	kernel_power_off();
+}
+
+static void kernel_shutdown_work(struct work_struct *work)
+{
+	do_msm_poweroff();
+}
+
+static void android_restart_work(struct work_struct *work)
+{
+	printk(KERN_ERR
+		"BUG: android are stalling %s:%d\n",
+			__FILE__, __LINE__);
+	kernel_restart("emergency");
+}
+
+static void kernel_restart_work(struct work_struct *work)
+{
+	printk(KERN_ERR
+		"BUG: some drivers are stalling %s:%d\n",
+			__FILE__, __LINE__);
+	arm_pm_restart(0, "emergency");
+}
+
+static int emergency_set(const char *val, struct kernel_param *kp)
+{
+	int ret;
+
+	ret = param_set_int(val, kp);
+
+	if (ret)
+		return ret;
+
+	printk("emergency_set:%d by %s\n", emergency_mode, current->comm);
+
+	if(emergency_mode == 1) {
+		cancel_delayed_work(&android_shutdown_struct);
+		schedule_delayed_work(&android_shutdown_struct, msecs_to_jiffies(60000));
+	}
+	else if(emergency_mode == 2) {
+		cancel_delayed_work(&android_restart_struct);
+		schedule_delayed_work(&android_restart_struct, msecs_to_jiffies(60000));
+	}
+
+	return 0;
+}
+#endif
 
 static int msm_restart_probe(struct platform_device *pdev)
 {
@@ -458,11 +596,9 @@ static int msm_restart_probe(struct platform_device *pdev)
 	pm_power_off = do_msm_poweroff;
 	arm_pm_restart = do_msm_restart;
 
-#ifdef CONFIG_SHARP_HANDLE_PANIC
-	sharp_panic_init_restart_reason_addr(restart_reason);
-	if (shrlog_is_enabled())
-		download_mode = sharp_panic_preset_restart_reason(download_mode);
-#endif /* CONFIG_SHARP_HANDLE_PANIC */
+#ifdef CONFIG_SHLOG_SYSTEM
+	__raw_writel(0x77665577, restart_reason);
+#endif /* CONFIG_SHLOG_SYSTEM */
 
 	if (scm_is_call_available(SCM_SVC_PWR, SCM_IO_DISABLE_PMIC_ARBITER) > 0)
 		scm_pmic_arbiter_disable_supported = true;

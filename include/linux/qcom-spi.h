@@ -53,4 +53,10 @@ struct msm_spi_platform_data {
 	bool rt_priority;
 	bool use_pinctrl;
 	bool is_shared;
+#if defined( CONFIG_SPI_DMA_THRESHOLD_SH )
+	u32  dma_threshold;
+#endif	/* CONFIG_SPI_DMA_THRESHOLD_SH */
+#if defined( CONFIG_SPI_AUTO_SUSPEND_SH )
+	u32  autosuspend_delay;
+#endif	/* CONFIG_SPI_AUTO_SUSPEND_SH */
 };

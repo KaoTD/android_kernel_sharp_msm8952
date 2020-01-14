@@ -169,6 +169,24 @@ struct diag_context {
 
 static struct list_head diag_dev_list;
 
+#ifdef CONFIG_USB_ANDROID_SH_CUST
+/* string descriptors: */
+static struct usb_string diag_string_defs[] = {
+	[0].s = "Qualcomm Port",
+	{  } /* end of list */
+};
+
+static struct usb_gadget_strings diag_string_table = {
+	.language =		0x0409,	/* en-us */
+	.strings =		diag_string_defs,
+};
+
+static struct usb_gadget_strings *diag_strings[] = {
+	&diag_string_table,
+	NULL,
+};
+#endif /* CONFIG_USB_ANDROID_SH_CUST */
+
 static inline struct diag_context *func_to_diag(struct usb_function *f)
 {
 	return container_of(f, struct diag_context, function);
@@ -804,6 +822,17 @@ int diag_function_add(struct usb_configuration *c, const char *name,
 		return -ENODEV;
 	}
 
+#ifdef CONFIG_USB_ANDROID_SH_CUST
+	/* maybe allocate device-global string ID */
+	if (diag_string_defs[0].id == 0) {
+		ret = usb_string_id(c->cdev);
+		if (ret < 0)
+			return ret;
+		diag_string_defs[0].id = ret;
+		intf_desc.iInterface = ret;
+	}
+#endif /* CONFIG_USB_ANDROID_SH_CUST */
+
 	dev = kzalloc(sizeof(*dev), GFP_KERNEL);
 	if (!dev)
 		return -ENOMEM;
@@ -827,6 +856,10 @@ int diag_function_add(struct usb_configuration *c, const char *name,
 	dev->function.unbind = diag_function_unbind;
 	dev->function.set_alt = diag_function_set_alt;
 	dev->function.disable = diag_function_disable;
+#ifdef CONFIG_USB_ANDROID_SH_CUST
+	dev->function.strings = diag_strings;
+#endif /* CONFIG_USB_ANDROID_SH_CUST */
+
 	kref_init(&dev->kref);
 	spin_lock_init(&dev->lock);
 	INIT_LIST_HEAD(&dev->read_pool);

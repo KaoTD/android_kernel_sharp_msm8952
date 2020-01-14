@@ -1,4 +1,4 @@
-/* Copyright (c) 2014-2015, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2014-2016, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -218,18 +218,6 @@ struct msm8916_asoc_mach_data {
 	int ext_audio_switch_gpio;
 	u32 ext_audio_switch_active_high;
 	struct regulator *ext_audio_switch_supply;
-#if defined(CONFIG_SPEAKER_EXT_PA)
-	int spk_ext_pa_gpio_lc;
-	struct delayed_work pa_gpio_work;
-	struct delayed_work pa_gpio_work_close;
-	unsigned char pa_is_on;
-#endif
-#if defined(CONFIG_SND_SOC_TPA6130A2)
-	int hph_ext_pa_gpio_lc;
-	struct delayed_work hph_pa_gpio_work;
-	struct delayed_work hph_pa_gpio_work_close;
-	unsigned char hph_pa_is_on;
-#endif
 	int mclk_freq;
 	int lb_mode;
 	u8 micbias1_cap_mode;
@@ -241,6 +229,7 @@ struct msm8916_asoc_mach_data {
 	struct mutex wsa_mclk_mutex;
 	struct delayed_work disable_mclk_work;
 	struct afe_digital_clk_cfg digital_cdc_clk;
+	struct afe_clk_set digital_cdc_core_clk;
 	void __iomem *vaddr_gpio_mux_spkr_ctl;
 	void __iomem *vaddr_gpio_mux_mic_ctl;
 	void __iomem *vaddr_gpio_mux_quin_ctl;

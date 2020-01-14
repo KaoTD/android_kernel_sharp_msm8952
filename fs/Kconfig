@@ -94,6 +94,12 @@ menu "DOS/FAT/NT Filesystems"
 source "fs/fat/Kconfig"
 source "fs/ntfs/Kconfig"
 
+config EXFAT_FS
+  tristate "exFAT fs support"
+  default m
+  help
+    This option provides support for the exFAT file system.
+
 endmenu
 endif # BLOCK
 
@@ -188,6 +194,7 @@ if MISC_FILESYSTEMS
 source "fs/adfs/Kconfig"
 source "fs/affs/Kconfig"
 source "fs/ecryptfs/Kconfig"
+source "fs/sdcardfs/Kconfig"
 source "fs/hfs/Kconfig"
 source "fs/hfsplus/Kconfig"
 source "fs/befs/Kconfig"

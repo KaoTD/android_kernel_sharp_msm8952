@@ -25,6 +25,31 @@
 		bootargs = "boot_cpus=0,4,5,6,7 sched_enable_hmp=1";
 	};
 
+	firmware: firmware {
+                android {
+                        compatible = "android,firmware";
+                        fstab {
+                                compatible = "android,fstab";
+                                vendor {
+                                        compatible = "android,vendor";
+                                        dev = "/dev/block/platform/soc.0/7824900.sdhci/by-name/vendor";
+                                        type = "ext4";
+                                        mnt_flags = "ro,barrier=1,discard";
+                                        fsmgr_flags = "wait";
+                                        status = "ok";
+                                };
+                                system {
+                                        compatible = "android,system";
+                                        dev = "/dev/block/platform/soc.0/7824900.sdhci/by-name/system";
+                                        type = "ext4";
+                                        mnt_flags = "ro,barrier=1,discard";
+                                        fsmgr_flags = "wait";
+                                        status = "ok";
+                                };
+                        };
+                };
+        };
+
 	aliases {
 		sdhc1 = &sdhc_1; /* SDC1 eMMC slot */
 		sdhc2 = &sdhc_2; /* SDC2 SD card slot */
@@ -52,7 +77,7 @@
 			linux,reserve-contiguous-region;
 			linux,reserve-region;
 			linux,remove-completely;
-			reg = <0x0 0x8c200000 0x0 0x1700000>;
+			reg = <0x0 0x8c200000 0x0 0x1800000>;
 			label = "reloc_mem";
 		};
 
@@ -60,7 +85,7 @@
 			linux,reserve-contiguous-region;
 			linux,reserve-region;
 			linux,remove-completely;
-			reg = <0x0 0x85e00000 0x0 0xa00000>;
+			reg = <0x0 0x85b00000 0x0 0xd00000>;
 			label = "other_ext_mem";
 		};
 
@@ -94,14 +119,6 @@
                         linux,reserve-contiguous-region;
                         reg = <0 0 0 0x400000>;
                         label = "adsp_mem";
-                };
-
-                ramoops_mem: ramoops_region@0xdffc0000 {
-                        linux,reserve-contiguous-region;
-                        linux,reserve-region;
-                        linux,remove-completely;
-                        reg = <0x0 0xdffc0000 0x0 0x40000>;
-                        label = "ramoops_mem";
                 };
 	};
 
@@ -713,9 +730,9 @@
 			qcom,low-threshold-uamp = <3400000>;
 			qcom,high-threshold-uamp = <4200000>;
 			qcom,mitigation-freq-khz = <998400>;
-			qcom,vph-high-threshold-uv = <3500000>;
-			qcom,vph-low-threshold-uv = <3200000>;
-			qcom,soc-low-threshold = <10>;
+			qcom,vph-high-threshold-uv = <3550000>;
+			qcom,vph-low-threshold-uv = <3400000>;
+			qcom,soc-low-threshold = <0>;
 			qcom,thermal-handle = <&msm_thermal_freq>;
 		};
 	};
@@ -1087,7 +1104,6 @@
 		qcom,ignore-core-reset-ack;
 		qcom,disable-clk-gating;
 		qcom,usb-bam-max-mbps-highspeed = <400>;
-		qcom,enable-hsusb-bam-on-boot;
 
 		qcom,pipe0 {
 			label = "hsusb-ipa-out-0";
@@ -1165,7 +1181,7 @@
 		qcom,vdd-voltage-level = <0 1200000 1200000>;
 
 		qcom,hsusb-otg-phy-init-seq =
-			<0x73 0x80 0x68 0x81 0x24 0x82 0xffffffff>;
+			<0x73 0x80 0x6F 0x81 0x34 0x82 0xffffffff>;
 		qcom,hsusb-otg-phy-type = <3>; /* SNPS Femto PHY */
 		qcom,hsusb-otg-mode = <3>; /* OTG mode */
 		qcom,hsusb-otg-otg-control = <2>; /* PMIC */
@@ -1175,7 +1191,6 @@
 		qcom,phy-dvdd-always-on;
 		qcom,boost-sysclk-with-streaming;
 		qcom,axi-prefetch-enable;
-		qcom,floated-charger-enable = <1>;
 
 		qcom,msm-bus,name = "usb2";
 		qcom,msm-bus,num-cases = <3>;
@@ -1534,12 +1549,6 @@
 		compatible = "qcom,msm-test-pacman";
 	};
 
-	cpu-pmu {
-		compatible = "arm,armv8-pmuv3";
-		qcom,irq-is-percpu;
-		interrupts = <1 7 0xff00>;
-	};
-
 	qcom_rng: qrng@22000 {
 		compatible = "qcom,msm-rng";
 		reg = <0x22000 0x140>;
@@ -1586,6 +1595,8 @@
 		qcom,use-sw-aes-xts-algo;
 		qcom,use-sw-aes-ccm-algo;
 		qcom,use-sw-ahash-algo;
+		qcom,use-sw-hmac-algo;
+		qcom,use-sw-aead-algo;
 		qcom,ce-opp-freq = <100000000>;
 	};
 
@@ -1614,9 +1625,9 @@
 		qcom,ce-opp-freq = <100000000>;
 	};
 
-	qcom_seecom: qseecom@85e00000 {
+	qcom_seecom: qseecom@85b00000 {
 		compatible = "qcom,qseecom";
-		reg = <0x85e00000 0x500000>;
+		reg = <0x85b00000 0x800000>;
 		reg-names = "secapp-region";
 		qcom,hlos-num-ce-hw-instances = <1>;
 		qcom,hlos-ce-hw-instance = <0>;
@@ -1866,6 +1877,8 @@
 		qcom,proxy-clock-names = "xo";
 		qcom,active-clock-names = "iface_clk", "bus_clk", "mem_clk";
 
+		qcom,pas-id = <5>;
+		qcom,pil-mss-memsetup;
 		qcom,firmware-name = "modem";
 		qcom,pil-self-auth;
 		qcom,sysmon-id = <0>;
@@ -2082,7 +2095,6 @@
 	voice: qcom,msm-pcm-voice {
 		compatible = "qcom,msm-pcm-voice";
 		qcom,destroy-cvd;
-		qcom,vote-bms;
 	};
 
 	stub_codec: qcom,msm-stub-codec {
@@ -2098,7 +2110,9 @@
 	};
 
 	voice_svc: qcom,msm-voice-svc {
-		compatible = "qcom,msm-voice-svc";
+/* => SH_AUDIO_DRIVER 22-060 */
+//		compatible = "qcom,msm-voice-svc";
+/* <= SH_AUDIO_DRIVER 22-060 */
 	};
 
 	loopback: qcom,msm-pcm-loopback {
@@ -2304,19 +2318,6 @@
 		qcom,msm-auxpcm-interface = "primary";
 	};
 
-	dai_sec_auxpcm: qcom,msm-sec-auxpcm {
-		compatible = "qcom,msm-auxpcm-dev";
-		qcom,msm-cpudai-auxpcm-mode = <0>, <0>;
-		qcom,msm-cpudai-auxpcm-sync = <1>, <1>;
-		qcom,msm-cpudai-auxpcm-frame = <5>, <4>;
-		qcom,msm-cpudai-auxpcm-quant = <2>, <2>;
-		qcom,msm-cpudai-auxpcm-num-slots = <1>, <1>;
-		qcom,msm-cpudai-auxpcm-slot-mapping = <1>, <1>;
-		qcom,msm-cpudai-auxpcm-data = <0>, <0>;
-		qcom,msm-cpudai-auxpcm-pcm-clk-rate = <2048000>, <2048000>;
-		qcom,msm-auxpcm-interface = "secondary";
-	};
-
 	qcom,msm-audio-ion {
 		compatible = "qcom,msm-audio-ion";
 		qcom,smmu-enabled;
@@ -2359,17 +2360,11 @@
 		qcom,ce-opp-freq = <100000000>;
 	};
 
-        ramoops {
-                compatible = "ramoops";
-                status = "okay";
-
-                android,ramoops-buffer-start = <0xdffc0000>;
-                android,ramoops-buffer-size =  <0x40000>;
-                android,ramoops-console-size = <0x10000>;
-                android,ramoops-record-size = <0x10000>;
-                android,ramoops-pmsg-size = <0x20000>;
-                android,ramoops-dump-oops = <0x1>;
-        };
+	cpu-pmu {
+		compatible = "arm,armv8-pmuv3";
+		qcom,irq-is-percpu;
+		interrupts = <1 7 0xff00>;
+	};
 };
 
 &gdsc_venus {

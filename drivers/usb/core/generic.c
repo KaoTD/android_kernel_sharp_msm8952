@@ -176,6 +176,12 @@ static int generic_probe(struct usb_device *udev)
 				 * set other configurations. */
 			}
 		}
+#ifdef CONFIG_USB_MSM_OTG_SH_CUST
+		else {
+			char *uevent_envp[2] = {"CONFIG=DISABLE" ,NULL};
+			kobject_uevent_env(&udev->dev.kobj,KOBJ_CHANGE, uevent_envp);
+		}
+#endif /* CONFIG_USB_MSM_OTG_SH_CUST */
 	}
 	/* USB device state == configured ... usable */
 	usb_notify_add_device(udev);

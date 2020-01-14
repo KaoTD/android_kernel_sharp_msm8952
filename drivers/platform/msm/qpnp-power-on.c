@@ -620,6 +620,14 @@ qpnp_get_cfg(struct qpnp_pon *pon, u32 pon_type)
 	return NULL;
 }
 
+#ifdef CONFIG_QPNP_SCPOWER_ON
+static uint powerkey_count;
+module_param(powerkey_count, uint, 0644);
+
+static uint volumeupkey_count;
+module_param(volumeupkey_count, uint, 0644);
+#endif
+
 static int
 qpnp_pon_input_dispatch(struct qpnp_pon *pon, u32 pon_type)
 {
@@ -647,9 +655,18 @@ qpnp_pon_input_dispatch(struct qpnp_pon *pon, u32 pon_type)
 	switch (cfg->pon_type) {
 	case PON_KPDPWR:
 		pon_rt_bit = QPNP_PON_KPDPWR_N_SET;
+#ifdef CONFIG_QPNP_SCPOWER_ON
+		printk(KERN_INFO "pwrkey: %s\n", (pon_rt_sts & pon_rt_bit) ? "press" : "release");
+		if (pon_rt_sts & pon_rt_bit)
+			powerkey_count++;
+#endif
 		break;
 	case PON_RESIN:
 		pon_rt_bit = QPNP_PON_RESIN_N_SET;
+#ifdef CONFIG_QPNP_SCPOWER_ON
+		if (pon_rt_sts & pon_rt_bit)
+			volumeupkey_count++;
+#endif
 		break;
 	case PON_CBLPWR:
 		pon_rt_bit = QPNP_PON_CBLPWR_N_SET;
@@ -1713,6 +1730,31 @@ static void qpnp_pon_debugfs_remove(struct spmi_device *spmi)
 {}
 #endif
 
+#ifdef CONFIG_BATTERY_SH
+#define PPNP_PS_HOLD_RESET_CTL	0x85A
+#define PMIC_MASTER_DEVICE_ID	0
+#define PMIC_SLAVE_DEVICE_ID	2
+#define PMIC_DVDD_HARD_RESET	0x8
+#define PMIC_XVDD_SHUTDOWN	0x6
+static int sh_qpnp_ps_hold_config(struct qpnp_pon *pon)
+{
+	int rc = 0;
+	u8 reg;
+
+	if(PMIC_MASTER_DEVICE_ID == pon->spmi->sid) {
+		reg = PMIC_DVDD_HARD_RESET;
+		rc = spmi_ext_register_writel(pon->spmi->ctrl, pon->spmi->sid,
+						PPNP_PS_HOLD_RESET_CTL, &reg, 1);
+	} else if(PMIC_SLAVE_DEVICE_ID == pon->spmi->sid) {
+		reg = PMIC_XVDD_SHUTDOWN;
+		rc = spmi_ext_register_writel(pon->spmi->ctrl, pon->spmi->sid,
+						PPNP_PS_HOLD_RESET_CTL, &reg, 1);
+	}
+
+	return rc;
+}
+#endif /* CONFIG_BATTERY_SH */
+
 static int qpnp_pon_probe(struct spmi_device *spmi)
 {
 	struct qpnp_pon *pon;
@@ -1922,6 +1964,14 @@ static int qpnp_pon_probe(struct spmi_device *spmi)
 			"Unable to initialize PON configurations rc: %d\n", rc);
 		return rc;
 	}
+
+#ifdef CONFIG_BATTERY_SH
+	rc = sh_qpnp_ps_hold_config(pon);
+	if (rc) {
+		dev_err(&spmi->dev,"Unable to config ps hold reset type rc: %d\n", rc);
+		return rc;
+	}
+#endif /* CONFIG_BATTERY_SH */
 
 	rc = of_property_read_u32(pon->spmi->dev.of_node,
 				"qcom,pon-dbc-delay", &delay);

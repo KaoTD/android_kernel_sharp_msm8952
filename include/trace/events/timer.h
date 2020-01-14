@@ -85,15 +85,24 @@ TRACE_EVENT(timer_expire_entry,
 		__field( void *,	timer	)
 		__field( unsigned long,	now	)
 		__field( void *,	function)
+#ifdef CONFIG_SHSYS_CUST_DEBUG
+		__field( unsigned int,	deferrable)
+#endif /* CONFIG_SHSYS_CUST_DEBUG */
 	),
 
 	TP_fast_assign(
 		__entry->timer		= timer;
 		__entry->now		= jiffies;
 		__entry->function	= timer->function;
+#ifdef CONFIG_SHSYS_CUST_DEBUG
+		__entry->deferrable	= (unsigned int)(unsigned long)timer->base & TIMER_DEFERRABLE;
+#endif /* CONFIG_SHSYS_CUST_DEBUG */
 	),
-
+#ifdef CONFIG_SHSYS_CUST_DEBUG
+	TP_printk("timer=%p function=%pf now=%lu defer=%1d", __entry->timer, __entry->function,__entry->now,__entry->deferrable)
+#else /* CONFIG_SHSYS_CUST_DEBUG */
 	TP_printk("timer=%p function=%pf now=%lu", __entry->timer, __entry->function,__entry->now)
+#endif /* CONFIG_SHSYS_CUST_DEBUG */
 );
 
 /**

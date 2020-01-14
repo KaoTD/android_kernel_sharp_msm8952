@@ -3028,8 +3028,10 @@ buffhds_first_it:
 	init_waitqueue_head(&common->fsg_wait);
 
 	/* Information */
+#ifdef CONFIG_USB_DEBUG_SH_LOG
 	INFO(common, FSG_DRIVER_DESC ", version: " FSG_DRIVER_VERSION "\n");
 	INFO(common, "Number of LUNs=%d\n", common->nluns);
+#endif /* CONFIG_USB_DEBUG_SH_LOG */
 
 	pathbuf = kmalloc(PATH_MAX, GFP_KERNEL);
 	for (i = 0, nluns = common->nluns, curlun = common->luns;
@@ -3045,11 +3047,13 @@ buffhds_first_it:
 					p = "(error)";
 			}
 		}
+#ifdef CONFIG_USB_DEBUG_SH_LOG
 		LINFO(curlun, "LUN: %s%s%sfile: %s\n",
 		      curlun->removable ? "removable " : "",
 		      curlun->ro ? "read only " : "",
 		      curlun->cdrom ? "CD-ROM " : "",
 		      p);
+#endif /* CONFIG_USB_DEBUG_SH_LOG */
 	}
 	kfree(pathbuf);
 

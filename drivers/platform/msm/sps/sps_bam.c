@@ -1,4 +1,4 @@
-/* Copyright (c) 2011-2015, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2011-2015, 2017, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -495,12 +495,12 @@ int sps_bam_enable(struct sps_bam *dev)
 		if (dev->props.logging_number > 0)
 			dev->props.logging_number--;
 		SPS_INFO(dev,
-			"sps:BAM %pa (va:0x%p) enabled: ver:0x%x, number of pipes:%d\n",
+			"sps:BAM %pa (va:0x%pK) enabled: ver:0x%x, number of pipes:%d\n",
 			BAM_ID(dev), dev->base, dev->version,
 			dev->props.num_pipes);
 	} else
 		SPS_DBG3(dev,
-			"sps:BAM %pa (va:0x%p) enabled: ver:0x%x, number of pipes:%d\n",
+			"sps:BAM %pa (va:0x%pK) enabled: ver:0x%x, number of pipes:%d\n",
 			BAM_ID(dev), dev->base, dev->version,
 			dev->props.num_pipes);
 
@@ -1099,6 +1099,28 @@ int sps_bam_pipe_disconnect(struct sps_bam *dev, u32 pipe_index)
 	} else {
 		result = SPS_ERROR;
 	}
+
+
+/* SH_BSP_CUST -> Add */
+#if defined( CONFIG_SPS_CUST_SH )
+	if(!result)
+	{
+		/* Insure that the BAM is enabled */
+		if ((dev->state & BAM_STATE_ENABLED) != 0)
+		{
+			/* No BAM pipes are active. */
+			if(dev->pipe_active_mask == 0)
+			{
+				SPS_DBG2(dev, "sps:BAM %pa:sps_bam_disable()\n", BAM_ID(dev));
+				if (sps_bam_disable(dev))
+				{
+					result = SPS_ERROR;
+				}
+			}
+		}
+	}
+#endif /* defined( CONFIG_SPS_CUST_SH ) */
+/* SH_BSP_CUST <- Add */
 
 	if (result)
 		SPS_ERR(dev, "sps:BAM %pa pipe %d already disconnected\n",
@@ -2075,7 +2097,7 @@ int sps_bam_pipe_get_event(struct sps_bam *dev,
 
 	if (pipe->sys.no_queue) {
 		SPS_ERR(dev,
-			"sps:Invalid connection for event: BAM %pa pipe %d context 0x%p\n",
+			"sps:Invalid connection for event: BAM %pa pipe %d context 0x%pK\n",
 			BAM_ID(dev), pipe_index, pipe);
 		notify->event_id = SPS_EVENT_INVALID;
 		return SPS_ERROR;
@@ -2199,10 +2221,37 @@ int sps_bam_pipe_is_empty(struct sps_bam *dev, u32 pipe_index,
 
 
 	/* Determine descriptor FIFO state */
-	if (end_offset == acked_offset)
+	if (end_offset == acked_offset) {
 		*empty = true;
-	else
-		*empty = false;
+	} else {
+		if ((pipe->state & BAM_STATE_BAM2BAM) == 0) {
+			*empty = false;
+			return 0;
+		}
+		if (bam_pipe_check_zlt(&dev->base, pipe_index)) {
+			bool p_idc;
+			u32 next_write;
+
+			p_idc = bam_pipe_check_pipe_empty(&dev->base,
+								pipe_index);
+
+			next_write = acked_offset + sizeof(struct sps_iovec);
+			if (next_write >= pipe->desc_size)
+				next_write = 0;
+
+			if (next_write == end_offset) {
+				*empty = true;
+				if (!p_idc)
+					SPS_DBG3(dev,
+						"sps:BAM %pa pipe %d pipe empty checking for ZLT.\n",
+						BAM_ID(dev), pipe_index);
+			} else {
+				*empty = false;
+			}
+		} else {
+			*empty = false;
+		}
+	}
 
 	return 0;
 }

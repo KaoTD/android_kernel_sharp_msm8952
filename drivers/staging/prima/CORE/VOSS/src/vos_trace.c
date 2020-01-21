@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012-2015 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2012-2014 The Linux Foundation. All rights reserved.
  *
  * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
  *
@@ -130,8 +130,6 @@ static tvosTraceData gvosTraceData;
  */
 static tpvosTraceCb vostraceCBTable[VOS_MODULE_ID_MAX];
 static tpvosTraceCb vostraceRestoreCBTable[VOS_MODULE_ID_MAX];
-static tp_vos_state_info_cb vos_state_info_table[VOS_MODULE_ID_MAX];
-
 /*-------------------------------------------------------------------------
   Functions
   ------------------------------------------------------------------------*/
@@ -198,38 +196,6 @@ void vos_trace_setValue( VOS_MODULE_ID module, VOS_TRACE_LEVEL level, v_U8_t on)
    }
 }
 
-//Begin Motorola dcw476 4/17/13 IKJBXLINE-5577:changing wlan driver log level dynamically
-void vos_trace_setValue_till_level( VOS_MODULE_ID module, VOS_TRACE_LEVEL level, v_U8_t on) {
-  // Make sure the caller is passing in a valid LEVEL.
-   if ( level < 0  || level >= VOS_TRACE_LEVEL_MAX )
-   {
-      pr_err("%s: Invalid trace level %d passed in!\n", __func__, level);
-      return;
-   }
-
-   // Make sure the caller is passing in a valid module.
-   if ( module < 0 || module >= VOS_MODULE_ID_MAX )
-   {
-      pr_err("%s: Invalid module id %d passed in!\n", __func__, module);
-      return;
-   }
-
-   // Treat 'none' differently.  NONE means we have to turn off all
-   // the bits in the bit mask so none of the traces appear.
-   if ( VOS_TRACE_LEVEL_NONE == level )
-   {
-      gVosTraceInfo[ module ].moduleTraceLevel = VOS_TRACE_LEVEL_NONE;
-   }
-   // Treat 'All' differently.  All means we have to turn on all
-   // the bits in the bit mask so all of the traces appear.
-   else if ( VOS_TRACE_LEVEL_ALL == level )
-   {
-      gVosTraceInfo[ module ].moduleTraceLevel = 0xFFFF;
-   } else {
-      gVosTraceInfo[ module ].moduleTraceLevel = VOS_TRACE_LEVEL_TO_MODULE_BITMASK( level +1) -1;
-   }
-}
-//IKJBXLINE-5577
 
 v_BOOL_t vos_trace_getLevel( VOS_MODULE_ID module, VOS_TRACE_LEVEL level )
 {
@@ -485,15 +451,6 @@ void vosTraceInit()
     }
 }
 
-void vos_register_debugcb_init()
-{
-    v_U8_t i;
-
-    for (i = 0; i < VOS_MODULE_ID_MAX; i++) {
-        vos_state_info_table[i] = NULL;
-    }
-}
-
 /*-----------------------------------------------------------------------------
   \brief vos_trace() - puts the messages in to ring-buffer
 
@@ -706,30 +663,5 @@ void vosTraceDumpAll(void *pMac, v_U8_t code, v_U8_t session,
     else
     {
         spin_unlock(&ltraceLock);
-    }
-}
-
-/**
- * vos_register_debug_callback() - stores callback handlers to print
- *                                                 state information
- */
-void vos_register_debug_callback(VOS_MODULE_ID moduleID,
-                                      tp_vos_state_info_cb vos_state_infocb)
-{
-    vos_state_info_table[moduleID] = vos_state_infocb;
-}
-
-/**
- * vos_state_info_dump_all() - it invokes callback of layer which registered
- * its callback to print its state information.
- * @cb_context: call back context to be passed
- */
-void vos_state_info_dump_all()
-{
-    v_U8_t module;
-
-    for (module = 0; module < VOS_MODULE_ID_MAX; module++) {
-         if (NULL != vos_state_info_table[module])
-             vos_state_info_table[module]();
     }
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012-2017 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2012-2016 The Linux Foundation. All rights reserved.
  *
  * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
  *
@@ -542,15 +542,10 @@ static eHalStatus hdd_IndicateScanResult(hdd_scan_info_t *scanInfo, tCsrScanResu
 
   --------------------------------------------------------------------------*/
 
-void __hdd_processSpoofMacAddrRequest(struct work_struct *work)
+VOS_STATUS hdd_processSpoofMacAddrRequest(hdd_context_t *pHddCtx)
 {
-    hdd_context_t *pHddCtx =
-        container_of(to_delayed_work(work), hdd_context_t, spoof_mac_addr_work);
 
     ENTER();
-
-    if (wlan_hdd_validate_context(pHddCtx))
-        return;
 
     mutex_lock(&pHddCtx->spoofMacAddr.macSpoofingLock);
 
@@ -561,7 +556,7 @@ void __hdd_processSpoofMacAddrRequest(struct work_struct *work)
                 pHddCtx->spoofMacAddr.isEnabled = FALSE;
                 mutex_unlock(&pHddCtx->spoofMacAddr.macSpoofingLock);
                 hddLog(LOGE, FL("Failed to generate random Mac Addr"));
-                return;
+                return VOS_STATUS_E_FAILURE;
         }
     }
 
@@ -589,14 +584,7 @@ void __hdd_processSpoofMacAddrRequest(struct work_struct *work)
 
     EXIT();
 
-    return;
-}
-
-void hdd_processSpoofMacAddrRequest(struct work_struct *work)
-{
-    vos_ssr_protect(__func__);
-    __hdd_processSpoofMacAddrRequest(work);
-    vos_ssr_unprotect(__func__);
+    return VOS_STATUS_SUCCESS;
 }
 
 /**---------------------------------------------------------------------------
@@ -626,7 +614,7 @@ static eHalStatus hdd_ScanRequestCallback(tHalHandle halHandle, void *pContext,
     
     ENTER();
 
-    hddLog(LOGW,"%s called with halHandle = %pK, pContext = %pK, scanID = %d,"
+    hddLog(LOGW,"%s called with halHandle = %p, pContext = %p, scanID = %d,"
            " returned status = %d", __func__, halHandle, pContext,
            (int) scanId, (int) status);
 
@@ -636,7 +624,7 @@ static eHalStatus hdd_ScanRequestCallback(tHalHandle halHandle, void *pContext,
        do some quick sanity before proceeding */
     if (pAdapter->dev != dev)
     {
-       hddLog(LOGW, "%s: device mismatch %pK vs %pK",
+       hddLog(LOGW, "%s: device mismatch %p vs %p",
                __func__, pAdapter->dev, dev);
         return eHAL_STATUS_SUCCESS;
     }
@@ -1014,7 +1002,7 @@ static eHalStatus hdd_CscanRequestCallback(tHalHandle halHandle, void *pContext,
     VOS_STATUS vos_status = VOS_STATUS_SUCCESS;
     ENTER();
 
-    hddLog(LOG1,"%s called with halHandle = %pK, pContext = %pK, scanID = %d,"
+    hddLog(LOG1,"%s called with halHandle = %p, pContext = %p, scanID = %d,"
            " returned status = %d", __func__, halHandle, pContext,
             (int) scanId, (int) status);
 

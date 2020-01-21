@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012-2017 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2012-2016 The Linux Foundation. All rights reserved.
  *
  * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
  *
@@ -363,7 +363,7 @@ static void hdd_wmm_disable_tl_uapsd (hdd_wmm_qos_context_t* pQosContext)
 static void hdd_wmm_free_context (hdd_wmm_qos_context_t* pQosContext)
 {
    v_CONTEXT_t pVosContext = vos_get_global_context( VOS_MODULE_ID_HDD, NULL );
-   hdd_context_t *pHddCtx = NULL;
+   hdd_context_t *pHddCtx;
 
    if (NULL == pVosContext)
    {
@@ -381,7 +381,7 @@ static void hdd_wmm_free_context (hdd_wmm_qos_context_t* pQosContext)
    }
 
    VOS_TRACE(VOS_MODULE_ID_HDD, WMM_TRACE_LEVEL_INFO_LOW,
-             "%s: Entered, context %pK",
+             "%s: Entered, context %p",
              __func__, pQosContext);
 
    // take the wmmLock since we're manipulating the context list
@@ -426,7 +426,7 @@ static void hdd_wmm_notify_app (hdd_wmm_qos_context_t* pQosContext)
    union iwreq_data wrqu;
    char buf[MAX_NOTIFY_LEN+1];
    v_CONTEXT_t pVosContext = vos_get_global_context( VOS_MODULE_ID_HDD, NULL );
-   hdd_context_t *pHddCtx = NULL;
+   hdd_context_t *pHddCtx;
 
    if (NULL == pVosContext)
    {
@@ -444,7 +444,7 @@ static void hdd_wmm_notify_app (hdd_wmm_qos_context_t* pQosContext)
    }
 
    VOS_TRACE(VOS_MODULE_ID_HDD, WMM_TRACE_LEVEL_INFO_LOW,
-             "%s: Entered, context %pK",
+             "%s: Entered, context %p",
              __func__, pQosContext);
 
    mutex_lock(&pHddCtx->wmmLock);
@@ -556,7 +556,7 @@ void hdd_wmm_inactivity_timer_cb( v_PVOID_t pUserData )
     v_U32_t currentTrafficCnt = 0;
     WLANTL_ACEnumType acType = 0;
     v_CONTEXT_t pVosContext = vos_get_global_context( VOS_MODULE_ID_HDD, NULL );
-    hdd_context_t *pHddCtx = NULL;
+    hdd_context_t *pHddCtx;
 
     ENTER();
     if (NULL == pVosContext)
@@ -589,7 +589,7 @@ void hdd_wmm_inactivity_timer_cb( v_PVOID_t pUserData )
     if ((NULL == pAdapter) || (WLAN_HDD_ADAPTER_MAGIC != pAdapter->magic))
     {
         VOS_TRACE(VOS_MODULE_ID_HDD, VOS_TRACE_LEVEL_ERROR,
-                  FL("invalid pAdapter: %pK"), pAdapter);
+                  FL("invalid pAdapter: %p"), pAdapter);
         return;
     }
 
@@ -740,7 +740,7 @@ static eHalStatus hdd_wmm_sme_callback (tHalHandle hHal,
    hdd_wmm_ac_status_t *pAc;
    VOS_STATUS status;
    v_CONTEXT_t pVosContext = vos_get_global_context( VOS_MODULE_ID_HDD, NULL );
-   hdd_context_t *pHddCtx = NULL;
+   hdd_context_t *pHddCtx;
 
    if (NULL == pVosContext)
    {
@@ -759,7 +759,7 @@ static eHalStatus hdd_wmm_sme_callback (tHalHandle hHal,
 
 
    VOS_TRACE(VOS_MODULE_ID_HDD, WMM_TRACE_LEVEL_INFO_LOW,
-             "%s: Entered, context %pK",
+             "%s: Entered, context %p",
              __func__, pQosContext);
 
    mutex_lock(&pHddCtx->wmmLock);
@@ -779,7 +779,7 @@ static eHalStatus hdd_wmm_sme_callback (tHalHandle hHal,
    pAc = &pAdapter->hddWmmStatus.wmmAcStatus[acType];
 
    VOS_TRACE(VOS_MODULE_ID_HDD, WMM_TRACE_LEVEL_INFO_LOW,
-             "%s: status %d flowid %d info %pK",
+             "%s: status %d flowid %d info %p",
              __func__, smeStatus, qosFlowId, pCurrentQosInfo);
 
    switch (smeStatus)
@@ -992,7 +992,7 @@ static eHalStatus hdd_wmm_sme_callback (tHalHandle hHal,
       VOS_TRACE( VOS_MODULE_ID_HDD, WMM_TRACE_LEVEL_ERROR,
                  "%s: Setup failed, not a QoS AP",
                  __func__);
-      if (HDD_WMM_HANDLE_IMPLICIT != pQosContext->handle)
+      if (!HDD_WMM_HANDLE_IMPLICIT == pQosContext->handle)
       {
          VOS_TRACE(VOS_MODULE_ID_HDD, WMM_TRACE_LEVEL_INFO,
                    "%s: Explicit Qos, notifying userspace",
@@ -1435,7 +1435,7 @@ static void __hdd_wmm_do_implicit_qos(struct work_struct *work)
 #endif
    sme_QosWmmTspecInfo qosInfo;
    v_CONTEXT_t pVosContext = vos_get_global_context( VOS_MODULE_ID_HDD, NULL );
-   hdd_context_t *pHddCtx = NULL;
+   hdd_context_t *pHddCtx;
    int ret = 0;
 
    if (NULL == pVosContext)
@@ -1455,7 +1455,7 @@ static void __hdd_wmm_do_implicit_qos(struct work_struct *work)
    }
 
    VOS_TRACE(VOS_MODULE_ID_HDD, WMM_TRACE_LEVEL_INFO_LOW,
-             "%s: Entered, context %pK",
+             "%s: Entered, context %p",
              __func__, pQosContext);
 
    mutex_lock(&pHddCtx->wmmLock);
@@ -1474,7 +1474,7 @@ static void __hdd_wmm_do_implicit_qos(struct work_struct *work)
    pAc = &pAdapter->hddWmmStatus.wmmAcStatus[acType];
 
    VOS_TRACE(VOS_MODULE_ID_HDD, WMM_TRACE_LEVEL_INFO_LOW,
-             "%s: pAdapter %pK acType %d",
+             "%s: pAdapter %p acType %d",
              __func__, pAdapter, acType);
 
    if (!pAc->wmmAcAccessNeeded)
@@ -1802,7 +1802,7 @@ VOS_STATUS hdd_wmm_adapter_close ( hdd_adapter_t* pAdapter )
 {
    hdd_wmm_qos_context_t* pQosContext;
    v_CONTEXT_t pVosContext = vos_get_global_context( VOS_MODULE_ID_HDD, NULL );
-   hdd_context_t *pHddCtx = NULL;
+   hdd_context_t *pHddCtx;
 
    if (NULL == pVosContext)
    {
@@ -1957,37 +1957,6 @@ void hdd_log_ip_addr(struct sk_buff *skb)
                 "%s: dst addr "IPv6_ADDR_STR, __func__, IPv6_ADDR_ARRAY(buf));
       }
    }
-}
-
-/**============================================================================
-  @brief hdd_get_arp_src_ip() - Function to get ARP src IP addr
-  @param skb      : [in]  pointer to OS packet (sk_buff)
-  @return         : IP addr
-  ===========================================================================*/
-uint32_t  hdd_get_arp_src_ip(struct sk_buff *skb)
-{
-   struct arphdr *arp;
-   unsigned char *arp_ptr;
-   uint32_t src_ip;
-
-#define ARP_HDR_SIZE ( sizeof(__be16)*3 + sizeof(unsigned char)*2 )
-#define ARP_SENDER_HW_ADDRESS_SZ (6)
-#define ARP_SENDER_IP_ADDRESS_SZ (4)
-
-   arp = (struct arphdr *)skb->data;
-
-   arp_ptr = (unsigned char *)arp + ARP_HDR_SIZE;
-   arp_ptr += ARP_SENDER_HW_ADDRESS_SZ;
-
-   memcpy(&src_ip, arp_ptr, ARP_SENDER_IP_ADDRESS_SZ);
-
-   src_ip=ntohl(src_ip);
-
-   return src_ip;
-
-#undef ARP_HDR_SIZE
-#undef ARP_SENDER_HW_ADDRESS_SZ
-#undef ARP_SENDER_IP_ADDRESS_SZ
 }
 
 /**============================================================================
@@ -2194,14 +2163,7 @@ v_VOID_t hdd_wmm_classify_pkt ( hdd_adapter_t* pAdapter,
 
   @return         : Qdisc queue index
   ===========================================================================*/
-v_U16_t hdd_hostapd_select_queue(struct net_device * dev, struct sk_buff *skb
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3,13,0))
-                                 , void *accel_priv
-#endif
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3,14,0))
-                                 , select_queue_fallback_t fallbac
-#endif
-)
+v_U16_t hdd_hostapd_select_queue(struct net_device * dev, struct sk_buff *skb)
 {
    WLANTL_ACEnumType ac;
    sme_QosWmmUpType up = SME_QOS_WMM_UP_BE;
@@ -2468,7 +2430,7 @@ VOS_STATUS hdd_wmm_acquire_access( hdd_adapter_t* pAdapter,
 
    // we need to establish implicit QoS
    VOS_TRACE(VOS_MODULE_ID_HDD, WMM_TRACE_LEVEL_INFO,
-             "%s: Need to schedule implicit QoS for TL AC %d, pAdapter is %pK",
+             "%s: Need to schedule implicit QoS for TL AC %d, pAdapter is %p",
              __func__, acType, pAdapter);
 
    pAdapter->hddWmmStatus.wmmAcStatus[acType].wmmAcAccessNeeded = VOS_TRUE;
@@ -2493,7 +2455,7 @@ VOS_STATUS hdd_wmm_acquire_access( hdd_adapter_t* pAdapter,
              hdd_wmm_do_implicit_qos);
 
    VOS_TRACE(VOS_MODULE_ID_HDD, WMM_TRACE_LEVEL_INFO,
-             "%s: Scheduling work for AC %d, context %pK",
+             "%s: Scheduling work for AC %d, context %p",
              __func__, acType, pQosContext);
 
    schedule_work(&pQosContext->wmmAcSetupImplicitQos);
@@ -2850,7 +2812,7 @@ hdd_wlan_wmm_status_e hdd_wmm_addts( hdd_adapter_t* pAdapter,
 #endif
    v_BOOL_t found = VOS_FALSE;
    v_CONTEXT_t pVosContext = vos_get_global_context( VOS_MODULE_ID_HDD, NULL );
-   hdd_context_t *pHddCtx = NULL;
+   hdd_context_t *pHddCtx;
 
    if (NULL == pVosContext)
    {
@@ -2960,7 +2922,7 @@ hdd_wlan_wmm_status_e hdd_wmm_addts( hdd_adapter_t* pAdapter,
    pQosContext->qosFlowId = 0;
 
    VOS_TRACE(VOS_MODULE_ID_HDD, WMM_TRACE_LEVEL_INFO,
-             "%s: Setting up QoS, context %pK",
+             "%s: Setting up QoS, context %p",
              __func__, pQosContext);
 
    mutex_lock(&pHddCtx->wmmLock);
@@ -3049,7 +3011,7 @@ hdd_wlan_wmm_status_e hdd_wmm_delts( hdd_adapter_t* pAdapter,
    sme_QosStatusType smeStatus;
 #endif
    v_CONTEXT_t pVosContext = vos_get_global_context( VOS_MODULE_ID_HDD, NULL );
-   hdd_context_t *pHddCtx = NULL;
+   hdd_context_t *pHddCtx;
 
    if (NULL == pVosContext)
    {
@@ -3095,7 +3057,7 @@ hdd_wlan_wmm_status_e hdd_wmm_delts( hdd_adapter_t* pAdapter,
 
 
    VOS_TRACE(VOS_MODULE_ID_HDD, WMM_TRACE_LEVEL_INFO_LOW,
-             "%s: found handle 0x%x, flow %d, AC %d, context %pK",
+             "%s: found handle 0x%x, flow %d, AC %d, context %p",
              __func__, handle, qosFlowId, acType, pQosContext);
 
 #ifndef WLAN_MDM_CODE_REDUCTION_OPT
@@ -3174,7 +3136,7 @@ hdd_wlan_wmm_status_e hdd_wmm_checkts( hdd_adapter_t* pAdapter,
    hdd_wmm_qos_context_t *pQosContext;
    hdd_wlan_wmm_status_e status = HDD_WLAN_WMM_STATUS_LOST;
    v_CONTEXT_t pVosContext = vos_get_global_context( VOS_MODULE_ID_HDD, NULL );
-   hdd_context_t *pHddCtx = NULL;
+   hdd_context_t *pHddCtx;
 
    if (NULL == pVosContext)
    {
@@ -3203,7 +3165,7 @@ hdd_wlan_wmm_status_e hdd_wmm_checkts( hdd_adapter_t* pAdapter,
       if (pQosContext->handle == handle)
       {
          VOS_TRACE(VOS_MODULE_ID_HDD, WMM_TRACE_LEVEL_INFO_LOW,
-                   "%s: found handle 0x%x, context %pK",
+                   "%s: found handle 0x%x, context %p",
                    __func__, handle, pQosContext);
 
          status = pQosContext->lastStatus;

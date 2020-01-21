@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012-2017 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2012-2014 The Linux Foundation. All rights reserved.
  *
  * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
  *
@@ -525,7 +525,7 @@ WLANTL_BaSessionAdd
       pClientSTA->atlBAReorderInfo[ucTid].reorderBuffer =
                                             &(pTLCb->reorderBufferPool[idx]);
       pTLCb->reorderBufferPool[idx].isAvailable = VOS_FALSE;
-      TLLOG4(VOS_TRACE(VOS_MODULE_ID_TL, VOS_TRACE_LEVEL_INFO_LOW,"%dth buffer available, buffer PTR 0x%pK",
+      TLLOG4(VOS_TRACE(VOS_MODULE_ID_TL, VOS_TRACE_LEVEL_INFO_LOW,"%dth buffer available, buffer PTR 0x%p",
                   idx,
                   pClientSTA->atlBAReorderInfo[ucTid].reorderBuffer
                   ));
@@ -1096,7 +1096,7 @@ VOS_STATUS WLANTL_MSDUReorder
    v_U16_t              reorderTime;
    if((NULL == pTLCb) || (*vosDataBuff == NULL))
    {
-      TLLOGE(VOS_TRACE(VOS_MODULE_ID_TL, VOS_TRACE_LEVEL_ERROR,"Invalid ARG pTLCb 0x%pK, vosDataBuff 0x%pK",
+      TLLOGE(VOS_TRACE(VOS_MODULE_ID_TL, VOS_TRACE_LEVEL_ERROR,"Invalid ARG pTLCb 0x%p, vosDataBuff 0x%p",
                   pTLCb, *vosDataBuff));
       return VOS_STATUS_E_INVAL;
    }
@@ -1156,8 +1156,7 @@ VOS_STATUS WLANTL_MSDUReorder
          break;
 
       case WLANTL_OPCODE_QCUR_FWDBUF:
-         if ((currentReorderInfo->LastSN > CSN) &&
-              !(currentReorderInfo->set_data_filter))
+         if (currentReorderInfo->LastSN > CSN)
          {
              if ((currentReorderInfo->LastSN - CSN) < CSN_WRAP_AROUND_THRESHOLD)
              {
@@ -1165,9 +1164,6 @@ VOS_STATUS WLANTL_MSDUReorder
                  TLLOG1(VOS_TRACE(VOS_MODULE_ID_TL, VOS_TRACE_LEVEL_INFO,
                           "(QCUR_FWDBUF) dropping old frame, SN=%d LastSN=%d",
                           CSN, currentReorderInfo->LastSN));
-                 if (vos_is_arp_pkt((*vosDataBuff)->pSkb, true))
-                    vos_update_arp_rx_drop_reorder();
-
                  status = vos_pkt_return_packet(*vosDataBuff);
                  if (!VOS_IS_STATUS_SUCCESS(status))
                  {
@@ -1208,9 +1204,6 @@ VOS_STATUS WLANTL_MSDUReorder
          }
          if(VOS_STATUS_E_RESOURCES == status)
          {
-            MTRACE(vos_trace(VOS_MODULE_ID_TL, TRACE_CODE_TL_QUEUE_CURRENT,
-                    currentReorderInfo->sessionID , ucOpCode ));
-
             /* This is the case slot index is already cycle one route, route all the frames Qed */
             vosPktIdx = NULL;
             status = WLANTL_ChainFrontPkts(ucFwdIdx,
@@ -1303,8 +1296,7 @@ VOS_STATUS WLANTL_MSDUReorder
          break;
 
       case WLANTL_OPCODE_QCUR:
-        if ((currentReorderInfo->LastSN > CSN) &&
-            !(currentReorderInfo->set_data_filter))
+        if (currentReorderInfo->LastSN > CSN)
         {
             if ((currentReorderInfo->LastSN - CSN) < CSN_WRAP_AROUND_THRESHOLD)
             {
@@ -1340,9 +1332,6 @@ VOS_STATUS WLANTL_MSDUReorder
            }
          if(VOS_STATUS_E_RESOURCES == status)
          {
-            MTRACE(vos_trace(VOS_MODULE_ID_TL, TRACE_CODE_TL_QUEUE_CURRENT,
-                                  currentReorderInfo->sessionID , ucOpCode ));
-
             /* This is the case slot index is already cycle one route, route all the frames Qed */
             vosPktIdx = NULL;
             status = WLANTL_ChainFrontPkts(ucFwdIdx,
@@ -1404,9 +1393,6 @@ VOS_STATUS WLANTL_MSDUReorder
            }
          if(VOS_STATUS_E_RESOURCES == status)
          {
-            MTRACE(vos_trace(VOS_MODULE_ID_TL, TRACE_CODE_TL_QUEUE_CURRENT,
-                                   currentReorderInfo->sessionID , ucOpCode ));
-
             vos_pkt_return_packet(vosPktIdx); 
             /* This is the case slot index is already cycle one route, route all the frames Qed */
             vosPktIdx = NULL;
@@ -1540,13 +1526,6 @@ VOS_STATUS WLANTL_MSDUReorder
                WLANTL_FillReplayCounter(currentReorderInfo,
                                  ullreplayCounter, ucSlotIdx);
            }
-
-         if(VOS_STATUS_E_RESOURCES == status)
-         {
-             MTRACE(vos_trace(VOS_MODULE_ID_TL, TRACE_CODE_TL_QUEUE_CURRENT,
-                                   currentReorderInfo->sessionID , ucOpCode ));
-         }
-
          if(!VOS_IS_STATUS_SUCCESS(status))
          {
             TLLOGE(VOS_TRACE(VOS_MODULE_ID_TL, VOS_TRACE_LEVEL_ERROR,"Q Current frame fail %d",
@@ -1731,17 +1710,14 @@ VOS_STATUS WLANTL_QueueCurrent
 {
    VOS_STATUS  status = VOS_STATUS_SUCCESS;
 
-   TLLOG4(VOS_TRACE(VOS_MODULE_ID_TL, VOS_TRACE_LEVEL_INFO_LOW,"vos Packet has to be Qed 0x%pK",
+   TLLOG4(VOS_TRACE(VOS_MODULE_ID_TL, VOS_TRACE_LEVEL_INFO_LOW,"vos Packet has to be Qed 0x%p",
                *vosDataBuff));
    if(NULL != pwBaReorder->reorderBuffer->arrayBuffer[ucSlotIndex])
    {
       MTRACE(vos_trace(VOS_MODULE_ID_TL, TRACE_CODE_TL_QUEUE_CURRENT,
                       pwBaReorder->sessionID , pwBaReorder->pendingFramesCount ));
 
-      MTRACE(vos_trace(VOS_MODULE_ID_TL, TRACE_CODE_TL_QUEUE_CURRENT,
-                                        pwBaReorder->sessionID , ucSlotIndex ));
-
-      TLLOGE(VOS_TRACE(VOS_MODULE_ID_TL, VOS_TRACE_LEVEL_INFO,"One Cycle rounded, lost many frames already, not in Q %d",
+      TLLOGE(VOS_TRACE(VOS_MODULE_ID_TL, VOS_TRACE_LEVEL_ERROR,"One Cycle rounded, lost many frames already, not in Q %d",
                   pwBaReorder->pendingFramesCount));
       return VOS_STATUS_E_RESOURCES;
    }
@@ -1815,7 +1791,7 @@ VOS_STATUS WLANTL_ChainFrontPkts
       fwdIndex = pwBaReorder->ucCIndex + pwBaReorder->winSize;
    }
 
-   TLLOG4(VOS_TRACE(VOS_MODULE_ID_TL, VOS_TRACE_LEVEL_INFO_LOW,"Current Index %d, FWD Index %d, reorderBuffer 0x%pK",
+   TLLOG4(VOS_TRACE(VOS_MODULE_ID_TL, VOS_TRACE_LEVEL_INFO_LOW,"Current Index %d, FWD Index %d, reorderBuffer 0x%p",
                pwBaReorder->ucCIndex % pwBaReorder->winSize,
                fwdIndex % pwBaReorder->winSize,
                pwBaReorder->reorderBuffer));

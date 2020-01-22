@@ -5156,13 +5156,8 @@ static int __wlan_hdd_cfg80211_firmware_roaming(struct wiphy *wiphy,
 
     //Update roaming
     status = sme_ConfigFwrRoaming((tHalHandle)(pHddCtx->hHal), isFwrRoamEnabled);
-    if (!HAL_STATUS_SUCCESS(status)) {
-        hddLog(LOGE,
-           FL("sme_ConfigFwrRoaming failed (err=%d)"), status);
-        return -EINVAL;
-    }
     EXIT();
-    return 0;
+    return status;
 }
 
 static int wlan_hdd_cfg80211_firmware_roaming(struct wiphy *wiphy,
@@ -5902,15 +5897,16 @@ void wlan_hdd_cfg80211_update_reg_info(struct wiphy *wiphy)
        }
     }
 }
+
 /* This function registers for all frame which supplicant is interested in */
 void wlan_hdd_cfg80211_register_frames(hdd_adapter_t* pAdapter)
 {
     tHalHandle hHal = WLAN_HDD_GET_HAL_CTX(pAdapter);
     /* Register for all P2P action, public action etc frames */
     v_U16_t type = (SIR_MAC_MGMT_FRAME << 2) | ( SIR_MAC_MGMT_ACTION << 4);
+
     ENTER();
-    /* Register frame indication call back */
-    sme_register_mgmt_frame_ind_callback(hHal, hdd_indicate_mgmt_frame);
+
    /* Right now we are registering these frame when driver is getting
       initialized. Once we will move to 2.6.37 kernel, in which we have
       frame register ops, we will move this code as a part of that */
@@ -8473,6 +8469,7 @@ static int wlan_hdd_tdls_add_station(struct wiphy *wiphy,
         mutex_unlock(&pHddCtx->tdls_lock);
         return -EINVAL;
     }
+    mutex_unlock(&pHddCtx->tdls_lock);
 
     /* in add station, we accept existing valid staId if there is */
     if ((0 == update) &&
@@ -8483,7 +8480,6 @@ static int wlan_hdd_tdls_add_station(struct wiphy *wiphy,
                    "%s: " MAC_ADDRESS_STR
                    " link_status %d. staId %d. add station ignored.",
                    __func__, MAC_ADDR_ARRAY(mac), pTdlsPeer->link_status, pTdlsPeer->staId);
-        mutex_unlock(&pHddCtx->tdls_lock);
         return 0;
     }
     /* in change station, we accept only when staId is valid */
@@ -8491,16 +8487,13 @@ static int wlan_hdd_tdls_add_station(struct wiphy *wiphy,
         ((pTdlsPeer->link_status > eTDLS_LINK_CONNECTING) ||
          (!TDLS_STA_INDEX_VALID(pTdlsPeer->staId))))
     {
-        tANI_U16 staId = pTdlsPeer->staId;
         VOS_TRACE( VOS_MODULE_ID_HDD, VOS_TRACE_LEVEL_ERROR,
                    "%s: " MAC_ADDRESS_STR
                    " link status %d. staId %d. change station %s.",
-                   __func__, MAC_ADDR_ARRAY(mac), pTdlsPeer->link_status, staId,
-                   (TDLS_STA_INDEX_VALID(staId)) ? "ignored" : "declined");
-        mutex_unlock(&pHddCtx->tdls_lock);
-        return (TDLS_STA_INDEX_VALID(staId)) ? 0 : -EPERM;
+                   __func__, MAC_ADDR_ARRAY(mac), pTdlsPeer->link_status, pTdlsPeer->staId,
+                   (TDLS_STA_INDEX_VALID(pTdlsPeer->staId)) ? "ignored" : "declined");
+        return (TDLS_STA_INDEX_VALID(pTdlsPeer->staId)) ? 0 : -EPERM;
     }
-    mutex_unlock(&pHddCtx->tdls_lock);
 
     /* when others are on-going, we want to change link_status to idle */
     if (NULL != wlan_hdd_tdls_is_progress(pHddCtx, mac, TRUE, TRUE))
@@ -8529,17 +8522,14 @@ static int wlan_hdd_tdls_add_station(struct wiphy *wiphy,
     else
     {
         hddTdlsPeer_t *pTdlsPeer;
-        mutex_lock(&pHddCtx->tdls_lock);
-        pTdlsPeer = wlan_hdd_tdls_find_peer(pAdapter, mac, FALSE);
+        pTdlsPeer = wlan_hdd_tdls_find_peer(pAdapter, mac, TRUE);
         if (pTdlsPeer && TDLS_IS_CONNECTED(pTdlsPeer))
         {
-            mutex_unlock(&pHddCtx->tdls_lock);
             VOS_TRACE( VOS_MODULE_ID_HDD, VOS_TRACE_LEVEL_ERROR,
                        "%s: " MAC_ADDRESS_STR " already connected. Request declined.",
                        __func__, MAC_ADDR_ARRAY(mac));
             return -EPERM;
         }
-        mutex_unlock(&pHddCtx->tdls_lock);
     }
     if (0 == update)
         wlan_hdd_tdls_set_link_status(pAdapter,
@@ -8665,7 +8655,6 @@ static int __wlan_hdd_change_station(struct wiphy *wiphy,
     tCsrStaParams StaParams = {0};
     tANI_U8 isBufSta = 0;
     tANI_U8 isOffChannelSupported = 0;
-    tANI_U8 isQosWmmSta = FALSE;
 #endif
 
     ENTER();
@@ -8747,6 +8736,17 @@ static int __wlan_hdd_change_station(struct wiphy *wiphy,
                 }
                 StaParams.supported_channels_len = j;
             }
+
+            if (params->supported_oper_classes_len >
+                SIR_MAC_MAX_SUPP_OPER_CLASSES) {
+                VOS_TRACE(VOS_MODULE_ID_HDD, VOS_TRACE_LEVEL_INFO,
+                          "received oper classes: %d, resetting it to max"
+                          "supported: %d", params->supported_oper_classes_len,
+                          SIR_MAC_MAX_SUPP_OPER_CLASSES);
+                params->supported_oper_classes_len =
+                        SIR_MAC_MAX_SUPP_OPER_CLASSES;
+            }
+
             vos_mem_copy(StaParams.supported_oper_classes,
                          params->supported_oper_classes,
                          params->supported_oper_classes_len);
@@ -8803,22 +8803,9 @@ static int __wlan_hdd_change_station(struct wiphy *wiphy,
                     isOffChannelSupported = 1;
                 }
             }
-
-            if (pHddCtx->cfg_ini->fEnableTDLSWmmMode &&
-                   (params->sta_flags_set & BIT(NL80211_STA_FLAG_WME))) {
-
-                /* TDLS Peer is WME/QoS capable */
-                isQosWmmSta = TRUE;
-            }
-
-            VOS_TRACE(VOS_MODULE_ID_HDD, VOS_TRACE_LEVEL_INFO,
-                      "%s: TDLS Peer is QOS capable isQosWmmSta= %d HTcapPresent= %d",
-                      __func__, isQosWmmSta, StaParams.htcap_present);
-
             status = wlan_hdd_tdls_set_peer_caps( pAdapter, mac,
                                                   &StaParams, isBufSta,
-                                                  isOffChannelSupported,
-                                                  isQosWmmSta);
+                                                  isOffChannelSupported);
 
             if (VOS_STATUS_SUCCESS != status) {
                 VOS_TRACE(VOS_MODULE_ID_HDD, VOS_TRACE_LEVEL_ERROR,
@@ -9860,13 +9847,7 @@ wlan_hdd_cfg80211_inform_bss_frame( hdd_adapter_t *pAdapter,
     qie_age->oui_2      = QCOM_OUI2;
     qie_age->oui_3      = QCOM_OUI3;
     qie_age->type       = QCOM_VENDOR_IE_AGE_TYPE;
-    /* Lowi expects the timestamp of bss in units of 1/10 ms. In driver all
-     * bss related timestamp is in units of ms. Due to this when scan results
-     * are sent to lowi the scan age is high.To address this, send age in units
-     * of 1/10 ms.
-     */
-    qie_age->age        = (vos_timer_get_system_time() -
-                                   bss_desc->nReceivedTime)/10;
+    qie_age->age        = vos_timer_get_system_ticks() - bss_desc->nReceivedTime;
 #endif
 
     memcpy(mgmt->u.probe_resp.variable, ie, ie_length);
@@ -11819,14 +11800,13 @@ int wlan_hdd_cfg80211_set_ie( hdd_adapter_t *pAdapter,
                 pWextState->roamProfile.nRSNReqIELength = eLen + 2; //ie_len;
                 break;
 
-                /* Appending extended capabilities with Interworking or
-                 * bsstransition bit set in Assoc Req.
+                /* Appending Extended Capabilities with Interworking bit set
+                 * in Assoc Req.
                  *
                  * In assoc req this EXT Cap will only be taken into account if
-                 * interworkingService or bsstransition bit is set to 1.
-                 * Driver is only interested in interworkingService and
-                 * bsstransition capability from supplicant.
-                 * If in future any other EXT Cap info is
+                 * interworkingService bit is set to 1. Currently
+                 * driver is only interested in interworkingService capability
+                 * from supplicant. If in future any other EXT Cap info is
                  * required from supplicat, it needs to be handled while
                  * sending Assoc Req in LIM.
                  */
@@ -12088,73 +12068,47 @@ int wlan_hdd_cfg80211_set_privacy( hdd_adapter_t *pAdapter,
 static int wlan_hdd_try_disconnect( hdd_adapter_t *pAdapter )
 {
     long ret = 0;
-    int status, result = 0;
     hdd_station_ctx_t *pHddStaCtx;
     eMib_dot11DesiredBssType connectedBssType;
-    hdd_context_t *pHddCtx = WLAN_HDD_GET_CTX(pAdapter);
 
-    ret = wlan_hdd_validate_context(pHddCtx);
-    if (0 != ret)
-    {
-        return ret;
-    }
     pHddStaCtx = WLAN_HDD_GET_STATION_CTX_PTR(pAdapter);
 
     hdd_connGetConnectedBssType(pHddStaCtx,&connectedBssType );
 
     if((eMib_dot11DesiredBssType_independent == connectedBssType) ||
       (eConnectionState_Associated == pHddStaCtx->conn_info.connState) ||
-      (eConnectionState_Connecting == pHddStaCtx->conn_info.connState) ||
       (eConnectionState_IbssConnected == pHddStaCtx->conn_info.connState))
     {
-        spin_lock_bh(&pAdapter->lock_for_active_session);
-        if (eConnectionState_Associated ==  pHddStaCtx->conn_info.connState)
-        {
-            wlan_hdd_decr_active_session(pHddCtx, pAdapter->device_mode);
-        }
-        spin_unlock_bh(&pAdapter->lock_for_active_session);
-        hdd_connSetConnectionState(pHddStaCtx,
-                     eConnectionState_Disconnecting);
         /* Issue disconnect to CSR */
         INIT_COMPLETION(pAdapter->disconnect_comp_var);
-        status = sme_RoamDisconnect(WLAN_HDD_GET_HAL_CTX(pAdapter),
+        if( eHAL_STATUS_SUCCESS ==
+              sme_RoamDisconnect( WLAN_HDD_GET_HAL_CTX(pAdapter),
                         pAdapter->sessionId,
-                        eCSR_DISCONNECT_REASON_UNSPECIFIED);
-        if(eHAL_STATUS_CMD_NOT_QUEUED == status) {
-            hddLog(LOG1,
-             FL("Already disconnected or connect was in sme/roam pending list and removed by disconnect"));
-        } else if ( 0 != status ) {
-            hddLog(LOGE,
-               FL("csrRoamDisconnect failure, returned %d"),
-               (int)status );
-            result = -EINVAL;
-            goto disconnected;
-        }
-        ret = wait_for_completion_timeout(
+                        eCSR_DISCONNECT_REASON_UNSPECIFIED ) )
+        {
+            ret = wait_for_completion_interruptible_timeout(
                          &pAdapter->disconnect_comp_var,
                          msecs_to_jiffies(WLAN_WAIT_TIME_DISCONNECT));
-        if (!ret && ( eHAL_STATUS_CMD_NOT_QUEUED != status)) {
-            hddLog(LOGE,
-              "%s: Failed to disconnect, timed out", __func__);
-            result = -ETIMEDOUT;
+            if (0 >=  ret)
+            {
+                hddLog(LOGE, FL("Failed to receive disconnect event"));
+                return -EALREADY;
+            }
         }
     }
     else if(eConnectionState_Disconnecting == pHddStaCtx->conn_info.connState)
     {
-        ret = wait_for_completion_timeout(
+        ret = wait_for_completion_interruptible_timeout(
                      &pAdapter->disconnect_comp_var,
                      msecs_to_jiffies(WLAN_WAIT_TIME_DISCONNECT));
-        if (!ret)
+        if (0 >= ret)
         {
             hddLog(LOGE, FL("Failed to receive disconnect event"));
-            result = -ETIMEDOUT;
+            return -EALREADY;
         }
     }
-disconnected:
-    hddLog(LOG1,
-          FL("Set HDD connState to eConnectionState_NotConnected"));
-    pHddStaCtx->conn_info.connState = eConnectionState_NotConnected;
-    return result;
+
+    return 0;
 }
 
 /*
@@ -12195,6 +12149,10 @@ static int __wlan_hdd_cfg80211_connect( struct wiphy *wiphy,
         return status;
     }
 
+    if (vos_max_concurrent_connections_reached()) {
+        hddLog(VOS_TRACE_LEVEL_INFO, FL("Reached max concurrent connections"));
+        return -ECONNREFUSED;
+    }
 
 #ifdef WLAN_BTAMP_FEATURE
     //Infra connect not supported when AMP traffic is on.
@@ -12222,11 +12180,6 @@ static int __wlan_hdd_cfg80211_connect( struct wiphy *wiphy,
                 " connection"));
         return -EALREADY;
     }
-    /* Check for max concurrent connections after doing disconnect if any*/
-    if (vos_max_concurrent_connections_reached()) {
-        hddLog(VOS_TRACE_LEVEL_INFO, FL("Reached max concurrent connections"));
-        return -ECONNREFUSED;
-    }
 
     /*initialise security parameters*/
     status = wlan_hdd_cfg80211_set_privacy(pAdapter, req);
@@ -12237,21 +12190,6 @@ static int __wlan_hdd_cfg80211_connect( struct wiphy *wiphy,
                 __func__);
         return status;
     }
-
-    if (pHddCtx->spoofMacAddr.isEnabled)
-    {
-        hddLog(VOS_TRACE_LEVEL_INFO,
-                        "%s: MAC Spoofing enabled ", __func__);
-        /* Updating SelfSta Mac Addr in TL which will be used to get staidx
-         * to fill TxBds for probe request during SSID scan which may happen
-         * as part of connect command
-         */
-        status = WLANTL_updateSpoofMacAddr(pHddCtx->pvosContext,
-            &pHddCtx->spoofMacAddr.randomMacAddr, &pAdapter->macAddressCurrent);
-        if (status != VOS_STATUS_SUCCESS)
-            return -ECONNREFUSED;
-    }
-
     if ( req->channel )
     {
         status = wlan_hdd_cfg80211_connect_start(pAdapter, req->ssid,
@@ -12309,7 +12247,6 @@ int wlan_hdd_disconnect( hdd_adapter_t *pAdapter, u16 reason )
     hdd_station_ctx_t *pHddStaCtx = WLAN_HDD_GET_STATION_CTX_PTR(pAdapter);
     hdd_context_t *pHddCtx = WLAN_HDD_GET_CTX(pAdapter);
     long ret;
-    eConnectionState prev_conn_state;
 
     ENTER();
 
@@ -12329,8 +12266,6 @@ int wlan_hdd_disconnect( hdd_adapter_t *pAdapter, u16 reason )
      * as there can be chance for double decrement if context switch
      * Calls  hdd_DisConnectHandler.
      */
-
-    prev_conn_state = pHddStaCtx->conn_info.connState;
 
     spin_lock_bh(&pAdapter->lock_for_active_session);
     if (eConnectionState_Associated ==  pHddStaCtx->conn_info.connState)
@@ -12358,56 +12293,40 @@ int wlan_hdd_disconnect( hdd_adapter_t *pAdapter, u16 reason )
     /*issue disconnect*/
     status = sme_RoamDisconnect( WLAN_HDD_GET_HAL_CTX(pAdapter),
                                  pAdapter->sessionId, reason);
-    if((eHAL_STATUS_CMD_NOT_QUEUED == status) &&
-             prev_conn_state != eConnectionState_Connecting)
-    {
-        hddLog(LOG1,
-            FL("status = %d, already disconnected"), status);
-        result = 0;
-        goto disconnected;
-    }
-    /*
-     * Wait here instead of returning directly, this will block the next
-     * connect command and allow processing of the scan for ssid and
-     * the previous connect command in CSR. Else we might hit some
-     * race conditions leading to SME and HDD out of sync.
-     */
-    else if(eHAL_STATUS_CMD_NOT_QUEUED == status)
-    {
-        hddLog(LOG1,
-            FL("Already disconnected or connect was in sme/roam pending list and removed by disconnect"));
+     if(eHAL_STATUS_CMD_NOT_QUEUED == status)
+     {
+        hddLog(VOS_TRACE_LEVEL_INFO,
+             FL("status = %d, already disconnected"),
+                     (int)status );
+
     }
     else if ( 0 != status )
     {
-        hddLog(LOGE,
-               FL("csrRoamDisconnect failure, returned %d"),
-               (int)status);
+        hddLog(VOS_TRACE_LEVEL_ERROR,
+               "%s csrRoamDisconnect failure, returned %d",
+               __func__, (int)status );
         result = -EINVAL;
         goto disconnected;
     }
-    ret = wait_for_completion_timeout(
+    ret = wait_for_completion_interruptible_timeout(
                 &pAdapter->disconnect_comp_var,
                 msecs_to_jiffies(WLAN_WAIT_TIME_DISCONNECT));
-    if (!ret && (eHAL_STATUS_CMD_NOT_QUEUED != status))
+    if (!ret && ( eHAL_STATUS_CMD_NOT_QUEUED != status ))
     {
-        hddLog(LOGE,
+        hddLog(VOS_TRACE_LEVEL_ERROR,
               "%s: Failed to disconnect, timed out", __func__);
-        VOS_BUG(0);
         result = -ETIMEDOUT;
     }
+    else if (ret == -ERESTARTSYS)
+    {
+        hddLog(VOS_TRACE_LEVEL_ERROR,
+               "%s: Failed to disconnect, wait interrupted", __func__);
+        result = -ERESTARTSYS;
+    }
 disconnected:
-     hddLog(LOG1,
+    VOS_TRACE( VOS_MODULE_ID_HDD, VOS_TRACE_LEVEL_INFO,
               FL("Set HDD connState to eConnectionState_NotConnected"));
     pHddStaCtx->conn_info.connState = eConnectionState_NotConnected;
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,11,0)
-    /* Sending disconnect event to userspace for kernel version < 3.11
-     * is handled by __cfg80211_disconnect call to __cfg80211_disconnected
-     */
-    hddLog(LOG1, FL("Send disconnected event to userspace"));
-
-    wlan_hdd_cfg80211_indicate_disconnect(pAdapter->dev, true,
-                                          WLAN_REASON_UNSPECIFIED);
-#endif
 
     EXIT();
     return result;
@@ -12528,10 +12447,7 @@ static int __wlan_hdd_cfg80211_disconnect( struct wiphy *wiphy,
                 }
             }
 #endif
-
-            hddLog(LOG1, FL("Disconnecting with reasoncode:%u connState %d"),
-                   reasonCode,
-                   pHddStaCtx->conn_info.connState);
+           hddLog(LOG1, FL("Disconnecting with reasoncode:%u"), reasonCode);
             status = wlan_hdd_disconnect(pAdapter, reasonCode);
             if ( 0 != status )
             {
@@ -14830,11 +14746,6 @@ static int __wlan_hdd_cfg80211_sched_scan_stop(struct wiphy *wiphy,
     MTRACE(vos_trace(VOS_MODULE_ID_HDD,
                      TRACE_CODE_HDD_CFG80211_SCHED_SCAN_STOP,
                      pAdapter->sessionId, pAdapter->device_mode));
-
-    INIT_COMPLETION(pAdapter->pno_comp_var);
-    pnoRequest.statusCallback = hdd_cfg80211_sched_scan_start_status_cb;
-    pnoRequest.callbackContext = pAdapter;
-    pAdapter->pno_req_status = 0;
     status = sme_SetPreferredNetworkList(hHal, &pnoRequest,
                                 pAdapter->sessionId,
                                 NULL, pAdapter);
@@ -14845,22 +14756,7 @@ static int __wlan_hdd_cfg80211_sched_scan_stop(struct wiphy *wiphy,
         ret = -EINVAL;
         goto error;
     }
-    ret = wait_for_completion_timeout(
-                 &pAdapter->pno_comp_var,
-                  msecs_to_jiffies(WLAN_WAIT_TIME_PNO));
-    if (0 >= ret)
-    {
-        // Did not receive the response for PNO disable in time.
-        // Assuming the PNO disable was success.
-        // Returning error from here, because we timeout, results
-        // in side effect of Wifi (Wifi Setting) not to work.
-        VOS_TRACE(VOS_MODULE_ID_HDD, VOS_TRACE_LEVEL_ERROR,
-                  FL("Timed out waiting for PNO to be disabled"));
-        ret = 0;
-    }
-
-    ret = pAdapter->pno_req_status;
-    pHddCtx->isPnoEnable = (ret == 0) ? FALSE : TRUE;
+    pHddCtx->isPnoEnable = FALSE;
 
 error:
     VOS_TRACE( VOS_MODULE_ID_HDD, VOS_TRACE_LEVEL_INFO,
@@ -15052,17 +14948,14 @@ static int __wlan_hdd_cfg80211_tdls_mgmt(struct wiphy *wiphy, struct net_device 
         else
         {
             hddTdlsPeer_t *pTdlsPeer;
-            mutex_lock(&pHddCtx->tdls_lock);
-            pTdlsPeer = wlan_hdd_tdls_find_peer(pAdapter, peer, FALSE);
+            pTdlsPeer = wlan_hdd_tdls_find_peer(pAdapter, peer, TRUE);
             if (pTdlsPeer && TDLS_IS_CONNECTED(pTdlsPeer))
             {
-                mutex_unlock(&pHddCtx->tdls_lock);
                 VOS_TRACE( VOS_MODULE_ID_HDD, VOS_TRACE_LEVEL_ERROR,
                         "%s:" MAC_ADDRESS_STR " already connected. action %d declined.",
                         __func__, MAC_ADDR_ARRAY(peer), action_code);
                 return -EPERM;
             }
-            mutex_unlock(&pHddCtx->tdls_lock);
         }
     }
     vos_mem_copy(peerMac, peer, 6);
@@ -15078,8 +14971,7 @@ static int __wlan_hdd_cfg80211_tdls_mgmt(struct wiphy *wiphy, struct net_device 
     {
 
        hddTdlsPeer_t *pTdlsPeer;
-       mutex_lock(&pHddCtx->tdls_lock);
-       pTdlsPeer = wlan_hdd_tdls_find_peer(pAdapter, peerMac, FALSE);
+       pTdlsPeer = wlan_hdd_tdls_find_peer(pAdapter, peerMac, TRUE);
 
        if(pTdlsPeer && TDLS_IS_CONNECTED(pTdlsPeer))
             responder = pTdlsPeer->is_responder;
@@ -15089,10 +14981,8 @@ static int __wlan_hdd_cfg80211_tdls_mgmt(struct wiphy *wiphy, struct net_device 
                     "%s: " MAC_ADDRESS_STR " peer doesn't exist or not connected %d dialog_token %d status %d, len = %zu",
                     __func__, MAC_ADDR_ARRAY(peer), (NULL == pTdlsPeer) ? -1 : pTdlsPeer->link_status,
                      dialog_token, status_code, len);
-           mutex_unlock(&pHddCtx->tdls_lock);
            return -EPERM;
        }
-       mutex_unlock(&pHddCtx->tdls_lock);
     }
 
     /* For explicit trigger of DIS_REQ come out of BMPS for
@@ -15283,6 +15173,7 @@ int wlan_hdd_tdls_extctrl_config_peer(hdd_adapter_t *pAdapter,
         mutex_unlock(&pHddCtx->tdls_lock);
         return -EINVAL;
     }
+    mutex_unlock(&pHddCtx->tdls_lock);
 
     /* check FW TDLS Off Channel capability */
     if ((TRUE == sme_IsFeatureSupportedByFW(TDLS_OFF_CHANNEL)) &&
@@ -15330,7 +15221,6 @@ int wlan_hdd_tdls_extctrl_config_peer(hdd_adapter_t *pAdapter,
 
     if ( 0 != wlan_hdd_tdls_set_force_peer(pAdapter, peer, TRUE) ) {
 
-        mutex_unlock(&pHddCtx->tdls_lock);
         VOS_TRACE(VOS_MODULE_ID_HDD, VOS_TRACE_LEVEL_ERROR,
               " %s TDLS Add Force Peer Failed",
               __func__);
@@ -15339,14 +15229,11 @@ int wlan_hdd_tdls_extctrl_config_peer(hdd_adapter_t *pAdapter,
     /*EXT TDLS*/
 
     if ( 0 != wlan_hdd_set_callback(pTdlsPeer, callback) ) {
-        mutex_unlock(&pHddCtx->tdls_lock);
         VOS_TRACE(VOS_MODULE_ID_HDD, VOS_TRACE_LEVEL_ERROR,
               " %s TDLS set callback Failed",
               __func__);
         return -EINVAL;
     }
-
-    mutex_unlock(&pHddCtx->tdls_lock);
 
     return(0);
 
@@ -15377,11 +15264,9 @@ int wlan_hdd_tdls_extctrl_deconfig_peer(hdd_adapter_t *pAdapter, u8 *peer)
     }
 
 
-    mutex_lock(&pHddCtx->tdls_lock);
-    pTdlsPeer = wlan_hdd_tdls_find_peer(pAdapter, peer, FALSE);
+    pTdlsPeer = wlan_hdd_tdls_find_peer(pAdapter, peer, TRUE);
 
     if ( NULL == pTdlsPeer ) {
-        mutex_unlock(&pHddCtx->tdls_lock);
         hddLog(VOS_TRACE_LEVEL_INFO, "%s: " MAC_ADDRESS_STR
                " peer not existing",
                __func__, MAC_ADDR_ARRAY(peer));
@@ -15400,7 +15285,6 @@ int wlan_hdd_tdls_extctrl_deconfig_peer(hdd_adapter_t *pAdapter, u8 *peer)
     }
 
     if ( 0 != wlan_hdd_tdls_set_force_peer(pAdapter, peer, FALSE) ) {
-        mutex_unlock(&pHddCtx->tdls_lock);
         hddLog(VOS_TRACE_LEVEL_ERROR, FL("Failed to set force peer"));
         return -EINVAL;
     }
@@ -15409,15 +15293,11 @@ int wlan_hdd_tdls_extctrl_deconfig_peer(hdd_adapter_t *pAdapter, u8 *peer)
 
     if ( 0 != wlan_hdd_set_callback(pTdlsPeer, NULL )) {
 
-        mutex_unlock(&pHddCtx->tdls_lock);
         VOS_TRACE(VOS_MODULE_ID_HDD, VOS_TRACE_LEVEL_ERROR,
               " %s TDLS set callback Failed",
               __func__);
         return -EINVAL;
     }
-
-    mutex_unlock(&pHddCtx->tdls_lock);
-
     return(0);
 
 }
@@ -15469,8 +15349,7 @@ static int __wlan_hdd_cfg80211_tdls_oper(struct wiphy *wiphy, struct net_device 
             {
                 VOS_STATUS status;
                 long ret;
-                tCsrTdlsLinkEstablishParams tdlsLinkEstablishParams = { {0}, 0,
-                                                0, 0, 0, 0, 0, 0, {0}, 0, {0} };
+                tCsrTdlsLinkEstablishParams tdlsLinkEstablishParams;
                 WLAN_STADescType         staDesc;
                 tANI_U16 numCurrTdlsPeers = 0;
                 hddTdlsPeer_t *connPeer = NULL;
@@ -15479,7 +15358,6 @@ static int __wlan_hdd_cfg80211_tdls_oper(struct wiphy *wiphy, struct net_device 
                 VOS_TRACE(VOS_MODULE_ID_HDD, VOS_TRACE_LEVEL_INFO,
                         " %s : NL80211_TDLS_ENABLE_LINK for " MAC_ADDRESS_STR,
                                 __func__, MAC_ADDR_ARRAY(peer));
-
                 pTdlsPeer = wlan_hdd_tdls_find_peer(pAdapter, peer, TRUE);
                 memset(&staDesc, 0, sizeof(staDesc));
                 if ( NULL == pTdlsPeer ) {
@@ -15521,7 +15399,6 @@ static int __wlan_hdd_cfg80211_tdls_oper(struct wiphy *wiphy, struct net_device 
                                   "TDLS channel switch", __func__);
 
                         connPeer->isOffChannelEstablished = FALSE;
-
                         ret = sme_SendTdlsChanSwitchReq(
                                            WLAN_HDD_GET_HAL_CTX(pAdapter),
                                            pAdapter->sessionId,
@@ -15581,34 +15458,11 @@ static int __wlan_hdd_cfg80211_tdls_oper(struct wiphy *wiphy, struct net_device 
                             return -EINVAL;
                         }
                     }
-
                     wlan_hdd_tdls_set_peer_link_status(pTdlsPeer,
                                                        eTDLS_LINK_CONNECTED,
                                                        eTDLS_LINK_SUCCESS);
                     staDesc.ucSTAId = pTdlsPeer->staId;
                     staDesc.ucQosEnabled = tdlsLinkEstablishParams.qos;
-
-                    VOS_TRACE(VOS_MODULE_ID_HDD, VOS_TRACE_LEVEL_INFO,
-                              "%s: tdlsLinkEstablishParams of peer "
-                              MAC_ADDRESS_STR "uapsdQueues: %d"
-                              "qos: %d maxSp: %d isBufSta: %d isOffChannelSupported: %d"
-                              "isResponder: %d  peerstaId: %d",
-                              __func__,
-                              MAC_ADDR_ARRAY(tdlsLinkEstablishParams.peerMac),
-                              tdlsLinkEstablishParams.uapsdQueues,
-                              tdlsLinkEstablishParams.qos,
-                              tdlsLinkEstablishParams.maxSp,
-                              tdlsLinkEstablishParams.isBufSta,
-                              tdlsLinkEstablishParams.isOffChannelSupported,
-                              tdlsLinkEstablishParams.isResponder,
-                              pTdlsPeer->staId);
-
-                    VOS_TRACE(VOS_MODULE_ID_HDD, VOS_TRACE_LEVEL_INFO,
-                              "%s: StaDesc ucSTAId: %d ucQosEnabled: %d",
-                              __func__,
-                              staDesc.ucSTAId,
-                              staDesc.ucQosEnabled);
-
                     ret = WLANTL_UpdateTdlsSTAClient(
                                                 pHddCtx->pvosContext,
                                                 &staDesc);
@@ -15747,9 +15601,7 @@ static int __wlan_hdd_cfg80211_tdls_oper(struct wiphy *wiphy, struct net_device 
                         }
                     }
                 }
-                /* stop TCP delack timer if TDLS is enable  */
-                set_bit(WLAN_TDLS_MODE, &pHddCtx->mode);
-                hdd_manage_delack_timer(pHddCtx);
+
             }
             break;
         case NL80211_TDLS_DISABLE_LINK:
@@ -15890,11 +15742,6 @@ static int __wlan_hdd_cfg80211_tdls_oper(struct wiphy *wiphy, struct net_device 
                     mutex_unlock(&pHddCtx->tdls_lock);
                     VOS_TRACE(VOS_MODULE_ID_HDD, VOS_TRACE_LEVEL_ERROR,
                               "%s: TDLS Peer Station doesn't exist.", __func__);
-                }
-                if (numCurrTdlsPeers == 0) {
-                   /* start TCP delack timer if TDLS is disable  */
-                    clear_bit(WLAN_TDLS_MODE, &pHddCtx->mode);
-                    hdd_manage_delack_timer(pHddCtx);
                 }
             }
             break;
@@ -16428,6 +16275,12 @@ static int __wlan_hdd_cfg80211_testmode(struct wiphy *wiphy, void *data, int len
             if ((hb_params_temp->cmd == LPHB_SET_TCP_PARAMS_INDID) &&
                 (hb_params_temp->params.lphbTcpParamReq.timePeriodSec == 0))
                 return -EINVAL;
+
+            if (buf_len > sizeof(*hb_params)) {
+                hddLog(LOGE, FL("buf_len=%d exceeded hb_params size limit"),
+                       buf_len);
+                return -ERANGE;
+            }
 
             hb_params = (tSirLPHBReq *)vos_mem_malloc(sizeof(tSirLPHBReq));
             if (NULL == hb_params)

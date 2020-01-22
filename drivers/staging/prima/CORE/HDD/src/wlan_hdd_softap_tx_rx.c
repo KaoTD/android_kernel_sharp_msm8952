@@ -276,41 +276,6 @@ static VOS_STATUS hdd_softap_flush_tx_queues( hdd_adapter_t *pAdapter )
    return status;
 }
 
-/**
- * hdd_softap_get_connected_sta() -  provide number of connected STA
- * @pHostapdAdapter: pAdapter for SAP
- *
- * This function is invoked for SAP mode to get connected STA.
- *
- * Return:  Total number of connected STA to SAP.
- */
-v_U8_t hdd_softap_get_connected_sta(hdd_adapter_t *pHostapdAdapter)
-{
-    v_U8_t i, sta_ct = 0;
-    v_CONTEXT_t pVosContext = NULL;
-    ptSapContext pSapCtx = NULL;
-
-    pVosContext = (WLAN_HDD_GET_CTX(pHostapdAdapter))->pvosContext;
-    pSapCtx = VOS_GET_SAP_CB(pVosContext);
-    if (pSapCtx == NULL) {
-        VOS_TRACE(VOS_MODULE_ID_SAP, VOS_TRACE_LEVEL_INFO,
-                 FL("psapCtx is NULL"));
-        goto error;
-    }
-
-    spin_lock_bh(&pSapCtx->staInfo_lock);
-    // get stations associated with SAP
-    for (i = 0; i < WLAN_MAX_STA_COUNT; i++) {
-        if (pSapCtx->aStaInfo[i].isUsed &&
-                  (!vos_is_macaddr_broadcast(&pSapCtx->aStaInfo[i].macAddrSTA)))
-               sta_ct++;
-    }
-    spin_unlock_bh( &pSapCtx->staInfo_lock );
-
-error:
-    return sta_ct;
-}
-
 /**============================================================================
   @brief hdd_softap_hard_start_xmit() - Function registered with the Linux OS for 
   transmitting packets. There are 2 versions of this function. One that uses
@@ -1068,7 +1033,6 @@ VOS_STATUS hdd_softap_deinit_tx_rx_sta ( hdd_adapter_t *pAdapter, v_U8_t STAId )
    status = hdd_sta_id_hash_remove_entry(pAdapter,
                 STAId, &pSapCtx->aStaInfo[STAId].macAddrSTA);
    if (status != VOS_STATUS_SUCCESS) {
-       spin_unlock_bh( &pSapCtx->staInfo_lock );
        VOS_TRACE(VOS_MODULE_ID_HDD_SAP_DATA, VOS_TRACE_LEVEL_ERROR,
                  FL("Not able to remove staid hash %d"), STAId);
        return VOS_STATUS_E_FAILURE;
@@ -1712,13 +1676,6 @@ VOS_STATUS hdd_softap_rx_packet_cbk( v_VOID_t *vosContext,
             VOS_TRACE(VOS_MODULE_ID_HDD, VOS_TRACE_LEVEL_INFO,
                       "SAP RX ARP");
          }
-      }
-
-      if (pHddCtx->rx_wow_dump) {
-         if (!(VOS_PKT_PROTO_TYPE_ARP & proto_type) &&
-             !(VOS_PKT_PROTO_TYPE_EAPOL & proto_type))
-            hdd_log_ip_addr(skb);
-            pHddCtx->rx_wow_dump = false;
       }
 
       if (WLAN_RX_BCMC_STA_ID == pRxMetaInfo->ucDesSTAId)

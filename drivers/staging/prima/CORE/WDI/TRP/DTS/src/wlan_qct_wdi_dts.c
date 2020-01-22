@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011-2016 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2012-2013 The Linux Foundation. All rights reserved.
  *
  * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
  *
@@ -57,7 +57,6 @@ static WDTS_TransportDriverTrype gTransportDriver = {
   WLANDXE_CompleteTX,
   WLANDXE_SetPowerState,
   WLANDXE_ChannelDebug,
-  WLANDXE_KickDxe,
   WLANDXE_Stop,
   WLANDXE_Close,
   WLANDXE_GetFreeTxDataResNumber,
@@ -74,28 +73,6 @@ typedef struct
    uint32 tputBpms;  //unit in Bytes per msec = (tputRateX1024x1024)/(8x10X1000) ~= (tputRate*13)
    uint32 tputBpus;  //unit in Bytes per usec: round off to integral value
 }WDTS_RateInfo;
-
-#define WDTS_MAX_NUMBER_OF_RX_PKT 5
-#define WDTS_MAX_PAGE_SIZE 4096
-#define WDTS_MAX_RXDB_DATA_SIZE 128
-
-#define MAC_ADDR_ARRAY(a) (a)[0], (a)[1], (a)[2], (a)[3], (a)[4], (a)[5]
-#define MAC_ADDRESS_STR "%02x:%02x:%02x:%02x:%02x:%02x"
-
-struct WDTS_RxPktInfo
-{
-    uint8 rx_bd[WDTS_MAX_RXDB_DATA_SIZE];
-    void *pFrame_head;
-    void *pFrame_tail;
-    uint32 pFrame_len;
-};
-
-static struct WDTS_PktInfoBuff
-{
-    struct WDTS_RxPktInfo PktInfo[WDTS_MAX_NUMBER_OF_RX_PKT];
-    uint32 current_count;
-    uint8 current_position;
-}WDTS_Pkt_Data_Buff = { .current_position = 0, .current_count = 0 };
 
 #define WDTS_MAX_RATE_NUM               137
 #define WDTS_MAX_11B_RATE_NUM           8
@@ -537,113 +514,6 @@ WDTS_GetReplayCounterFromRxBD
 #endif
 }
 
-/* Store RXBD, skb lenght, skb head, and skb end offset to global buffer.
- * This function should  be invoked when MPDU lenght + MPDU herader Offset
- * if higher then 3872 bytes.
- * Parameters:
- * pFrame:Refernce to PAL frame.
- * pBDHeader: BD header for PAL Frame.
- * Return Value: v_VOID_t
- *
- */
-v_VOID_t
-WDTS_StoreMetaInfo(wpt_packet *pFrame, wpt_uint8 *pBDHeader)
-{
-    wpt_uint8  usMPDUHLen;
-    wpt_boolean usAsf, usAef, usLsf, usESF;
-    wpt_uint16 usMPDULen;
-    wpt_uint32 usPmiCmd24to25;
-    struct WDTS_RxPktInfo *current_data =
-           &WDTS_Pkt_Data_Buff.PktInfo[WDTS_Pkt_Data_Buff.current_position];
-
-    vos_mem_copy(current_data->rx_bd, (void*)wpalPacketGetRawBuf(pFrame),
-                                                       WDTS_MAX_RXDB_DATA_SIZE);
-
-    usMPDULen = (wpt_uint16)WDI_RX_BD_GET_MPDU_LEN(pBDHeader);
-    usMPDUHLen = (wpt_uint8)WDI_RX_BD_GET_MPDU_H_LEN(pBDHeader);
-    usAsf = (wpt_boolean)WDI_RX_BD_GET_ASF(pBDHeader);
-    usAef = (wpt_boolean)WDI_RX_BD_GET_AEF(pBDHeader);
-    usLsf = (wpt_boolean)WDI_RX_BD_GET_LSF(pBDHeader);
-    usESF = (wpt_boolean)WDI_RX_BD_GET_ESF(pBDHeader);
-    usPmiCmd24to25 = (wpt_uint32)WDI_RX_BD_GET_PMICMD_24TO25(pBDHeader);
-
-    current_data->pFrame_head = wpalGetOSPktHead(pFrame);
-    current_data->pFrame_tail = wpalGetOSPktend(pFrame);
-    current_data->pFrame_len = wpalPacketGetLength(pFrame);
-
-    WDTS_Pkt_Data_Buff.current_count++;
-
-    /* Dump packet info */
-    VOS_TRACE(VOS_MODULE_ID_WDI, VOS_TRACE_LEVEL_ERROR,
-                  "count: %d usMPDULen: 0x%x, usMPDUHLen: 0x%x, usAsf: %x,"
-                  "usAef: %x, usLsf: 0x%x, usESF: 0x%x, usPmiCmd24to25: 0x%x,"
-                  "skb_len: 0x%x",WDTS_Pkt_Data_Buff.current_count, usMPDULen,
-                  usMPDUHLen, usAsf, usAef, usLsf, usESF, usPmiCmd24to25,
-                  current_data->pFrame_len);
-
-    WDTS_Pkt_Data_Buff.current_position++;
-    if(WDTS_Pkt_Data_Buff.current_position >= WDTS_MAX_NUMBER_OF_RX_PKT)
-       WDTS_Pkt_Data_Buff.current_position = 0;
-
-    return;
-}
-
-/**
- *WDTS_RxPacketDump - Dump Rx packet details
- *@pFrame: pointer to first Rx buffer received
- *@pRxMetadata: pointer to RX packet Meta Info
- *
- *DTS utility to dump RX packet details.
- *
- *Return: None.
- */
-static void WDTS_RxPacketDump(vos_pkt_t *pFrame,
-                              WDI_DS_RxMetaInfoType *pRxMetadata)
-{
-    tpSirMacMgmtHdr pHdr;
-
-    if (NULL == pRxMetadata) {
-        VOS_TRACE(VOS_MODULE_ID_WDI, VOS_TRACE_LEVEL_ERROR,
-                  "%s: RX Meta data info is NULL", __func__);
-        return;
-    }
-
-    pHdr = (tpSirMacMgmtHdr)pRxMetadata->mpduHeaderPtr;
-
-    /* RX packet type*/
-    if (pRxMetadata->bcast)
-         VOS_TRACE(VOS_MODULE_ID_WDI, VOS_TRACE_LEVEL_ERROR,
-                   "%s RX Data frame is BC", __func__);
-    else if (pHdr->da[0] & 0x01)
-         VOS_TRACE(VOS_MODULE_ID_WDI, VOS_TRACE_LEVEL_ERROR,
-                   "%s RX Data frame is MC", __func__);
-    else
-         VOS_TRACE(VOS_MODULE_ID_WDI, VOS_TRACE_LEVEL_ERROR,
-                   "%s RX Data frame is UC", __func__);
-
-    /* 802.11 packet type, subtype */
-    if (WDI_MAC_MGMT_FRAME == pRxMetadata->type) {
-       VOS_TRACE(VOS_MODULE_ID_WDI, VOS_TRACE_LEVEL_ERROR,
-                 "%s: Management subtype:%d SA:"MAC_ADDRESS_STR" DA:"
-                 MAC_ADDRESS_STR, __func__, pRxMetadata->subtype,
-                 MAC_ADDR_ARRAY(pHdr->sa), MAC_ADDR_ARRAY(pHdr->da));
-        vos_set_rx_wow_dump(false);
-    } else if (WDI_MAC_CTRL_FRAME == pRxMetadata->type) {
-        VOS_TRACE(VOS_MODULE_ID_WDI, VOS_TRACE_LEVEL_ERROR,
-                  "%s: Control subtype:%d SA:"MAC_ADDRESS_STR" DA:"
-                  MAC_ADDRESS_STR, __func__, pRxMetadata->subtype,
-                  MAC_ADDR_ARRAY(pHdr->sa), MAC_ADDR_ARRAY(pHdr->da));
-        vos_set_rx_wow_dump(false);
-    } else if (WDI_MAC_DATA_FRAME == pRxMetadata->type) {
-        VOS_TRACE(VOS_MODULE_ID_WDI, VOS_TRACE_LEVEL_ERROR,
-                  "%s: Data subtype:%d SA:"MAC_ADDRESS_STR" DA:"
-                  MAC_ADDRESS_STR, __func__, pRxMetadata->subtype,
-                  MAC_ADDR_ARRAY(pHdr->sa), MAC_ADDR_ARRAY(pHdr->da));
-    } else
-        VOS_TRACE(VOS_MODULE_ID_WDI, VOS_TRACE_LEVEL_ERROR,
-                  "%s: Unknown frame SA:"MAC_ADDRESS_STR,
-                   __func__, MAC_ADDR_ARRAY(pHdr->sa));
-}
 
 /* DTS Rx packet function. 
  * This function should be invoked by the transport device to indicate 
@@ -731,29 +601,18 @@ wpt_status WDTS_RxPacket (void *pContext, wpt_packet *pFrame, WDTS_ChannelType c
   // Special handling for frames which contain logging information
   if (WDTS_CHANNEL_RX_LOG == channel)
   {
-      if (VPKT_SIZE_BUFFER_ALIGNED < (usMPDULen+ucMPDUHOffset))
-      {
-          /* Size of the packet tranferred by the DMA engine is
-           * greater than the the memory allocated for the skb
-           * Recover the SKB  case of length is in same memory page
-           */
-          WPAL_TRACE(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_FATAL,
+      if(VPKT_SIZE_BUFFER_ALIGNED < (usMPDULen+ucMPDUHOffset)){
+        WPAL_TRACE(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_FATAL,
                    "Invalid Frame size, might memory corrupted(%d+%d/%d)",
                    usMPDULen, ucMPDUHOffset, VPKT_SIZE_BUFFER_ALIGNED);
 
-          // Store RXBD,  skb head, tail and skb lenght in circular buffer
-          WDTS_StoreMetaInfo(pFrame, pBDHeader);
+        /* Size of the packet tranferred by the DMA engine is
+         * greater than the the memory allocated for the skb
+         */
+        WPAL_BUG(0);
 
-          if ((usMPDULen+ucMPDUHOffset) <= WDTS_MAX_PAGE_SIZE)
-          {
-              wpalRecoverTail(pFrame);
-              wpalPacketFree(pFrame);
-          } else {
-              //Recovery may cause adjoining buffer corruption
-              WPAL_BUG(0);
-          }
-
-          return eWLAN_PAL_STATUS_SUCCESS;
+        wpalPacketFree(pFrame);
+        return eWLAN_PAL_STATUS_SUCCESS;
       }
 
       /* Firmware should send the Header offset as length
@@ -797,31 +656,19 @@ wpt_status WDTS_RxPacket (void *pContext, wpt_packet *pFrame, WDTS_ChannelType c
         ucMPDUHOffset = usMPDUDOffset;
       }
 
-      if (VPKT_SIZE_BUFFER_ALIGNED < (usMPDULen+ucMPDUHOffset))
-      {
-          /* Size of the packet tranferred by the DMA engine is
-           * greater than the the memory allocated for the skb
-           * Recover the SKB  case of length is in same memory page
-           */
-          WPAL_TRACE(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_FATAL,
+      if(VPKT_SIZE_BUFFER_ALIGNED < (usMPDULen+ucMPDUHOffset)){
+        WPAL_TRACE(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_FATAL,
                    "Invalid Frame size, might memory corrupted(%d+%d/%d)",
                    usMPDULen, ucMPDUHOffset, VPKT_SIZE_BUFFER_ALIGNED);
 
-          // Store RXBD,  skb head, tail and skb lenght in circular buffer
-          WDTS_StoreMetaInfo(pFrame, pBDHeader);
+        /* Size of the packet tranferred by the DMA engine is
+         * greater than the the memory allocated for the skb
+         */
+        WPAL_BUG(0);
 
-          if ((usMPDULen+ucMPDUHOffset) <= WDTS_MAX_PAGE_SIZE)
-          {
-              wpalRecoverTail(pFrame);
-              wpalPacketFree(pFrame);
-          } else {
-              //Recovery may cause adjoining buffer corruption
-              WPAL_BUG(0);
-          }
-
-          return eWLAN_PAL_STATUS_SUCCESS;
+        wpalPacketFree(pFrame);
+        return eWLAN_PAL_STATUS_SUCCESS;
       }
-
       if(eWLAN_PAL_STATUS_SUCCESS != wpalPacketSetRxLength(pFrame, usMPDULen+ucMPDUHOffset))
       {
           DTI_TRACE( DTI_TRACE_LEVEL_ERROR, "Invalid Frame Length, Frame dropped..");
@@ -859,7 +706,6 @@ wpt_status WDTS_RxPacket (void *pContext, wpt_packet *pFrame, WDTS_ChannelType c
 #ifdef WLAN_FEATURE_ROAM_SCAN_OFFLOAD
       pRxMetadata->offloadScanLearn = WDI_RX_BD_GET_OFFLOADSCANLEARN(pBDHeader);
       pRxMetadata->roamCandidateInd = WDI_RX_BD_GET_ROAMCANDIDATEIND(pBDHeader);
-      pRxMetadata->perRoamCndInd = WDI_RX_BD_GET_PER_ROAMCANDIDATEIND(pBDHeader);
 #endif
 #ifdef WLAN_FEATURE_EXTSCAN
       pRxMetadata->extscanBuffer = WDI_RX_BD_GET_EXTSCANFULLSCANRESIND(pBDHeader);
@@ -932,29 +778,24 @@ wpt_status WDTS_RxPacket (void *pContext, wpt_packet *pFrame, WDTS_ChannelType c
       {
           vos_record_roam_event(e_DXE_RX_PKT_TIME, (void *)pFrame, pRxMetadata->type);
       }
-
-      /* Dump first Rx packet after host wakeup */
-      if (vos_get_rx_wow_dump())
-          WDTS_RxPacketDump((vos_pkt_t*)pFrame, pRxMetadata);
-
-      /* Invoke Rx complete callback */
-      pClientData->receiveFrameCB(pClientData->pCallbackContext, pFrame);
+      // Invoke Rx complete callback
+      pClientData->receiveFrameCB(pClientData->pCallbackContext, pFrame);  
   }
   else
   {
       wpalPacketSetRxLength(pFrame, usMPDULen+ucMPDUHOffset);
       wpalPacketRawTrimHead(pFrame, ucMPDUHOffset);
 
-      /* flow control related */
+      //flow control related
       pRxMetadata->fc = isFcBd;
       pRxMetadata->mclkRxTimestamp = WDI_RX_BD_GET_TIMESTAMP(pBDHeader);
       pRxMetadata->fcStaTxDisabledBitmap = WDI_RX_FC_BD_GET_STA_TX_DISABLED_BITMAP(pBDHeader);
       pRxMetadata->fcSTAValidMask = WDI_RX_FC_BD_GET_STA_VALID_MASK(pBDHeader);
-      /* Invoke Rx complete callback */
+      // Invoke Rx complete callback
       pClientData->receiveFrameCB(pClientData->pCallbackContext, pFrame);  
   }
 
-  /* Log the RX Stats */
+  //Log the RX Stats
   if(gDsTrafficStats.running && pRxMetadata->staId < HAL_NUM_STA)
   {
      if(pRxMetadata->rateIndex < WDTS_MAX_RATE_NUM)
@@ -1298,19 +1139,6 @@ wpt_status WDTS_SetPowerState(void *pContext, WDTS_PowerStateType  powerState,
 void WDTS_ChannelDebug(wpt_boolean displaySnapshot, wpt_uint8 debugFlags)
 {
    gTransportDriver.channelDebug(displaySnapshot, debugFlags);
-   return;
-}
-
-/* DTS Transport Channel Kick Dxe
- * Request Kick DXE when HDD TX time out happen
- *
- * Parameters  : NONE
- * Return Value: NONE
- *
- */
-void WDTS_ChannelKickDxe()
-{
-   gTransportDriver.kickDxe();
    return;
 }
 

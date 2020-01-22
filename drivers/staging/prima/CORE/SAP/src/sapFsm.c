@@ -260,7 +260,10 @@ sapGotoChannelSel
 #endif
     tHalHandle hHal;
     tANI_U8   channel;
-    uint32_t operating_band = 0;
+
+#ifdef FEATURE_WLAN_CH_AVOID
+    v_U8_t i;
+#endif
 
     hHal = (tHalHandle)vos_get_context( VOS_MODULE_ID_SME, sapContext->pvosGCtx);
     if (NULL == hHal)
@@ -346,44 +349,35 @@ sapGotoChannelSel
             VOS_TRACE( VOS_MODULE_ID_SAP, VOS_TRACE_LEVEL_INFO_HIGH,
                   FL("SoftAP Configuring for default channel, Ch= %d"),
                   sapContext->channel);
-            /*
-             * In case of error, select channel based on band
-             * configured in .ini
-             */
-            ccmCfgGetInt(hHal, WNI_CFG_SAP_CHANNEL_SELECT_OPERATING_BAND,
-                         &operating_band);
-            if (operating_band == eSAP_RF_SUBBAND_5_LOW_GHZ ||
-                operating_band == eSAP_RF_SUBBAND_5_MID_GHZ ||
-                operating_band == eSAP_RF_SUBBAND_5_HIGH_GHZ)
-            {
-                VOS_TRACE(VOS_MODULE_ID_SAP, VOS_TRACE_LEVEL_INFO,
-                          FL("Default channel selection from band %d"),
-                          operating_band);
-
-                (operating_band == eSAP_RF_SUBBAND_5_LOW_GHZ) ?
-                        (sapContext->channel = SAP_DEFAULT_LOW_5GHZ_CHANNEL) :
-                (operating_band == eSAP_RF_SUBBAND_5_MID_GHZ) ?
-                        (sapContext->channel = SAP_DEFAULT_MID_5GHZ_CHANNEL) :
-                (operating_band == eSAP_RF_SUBBAND_5_HIGH_GHZ) ?
-                        (sapContext->channel =
-                                     SAP_DEFAULT_HIGH_5GHZ_CHANNEL) : 0;
-
-                VOS_TRACE(VOS_MODULE_ID_SAP, VOS_TRACE_LEVEL_INFO,
-                          FL("channel selected to start bss %d"),
-                          sapContext->channel);
-            }
-            else
-            {
-                sapContext->channel = SAP_DEFAULT_24GHZ_CHANNEL;
-            }
-
+            /* In case of error, switch to default channel */
+            sapContext->channel = SAP_DEFAULT_CHANNEL;
 #ifdef SOFTAP_CHANNEL_RANGE
             if(sapContext->channelList != NULL)
             {
-                sapContext->channel = sapContext->channelList[0];
-                vos_mem_free(sapContext->channelList);
-                sapContext->channelList = NULL;
+                for ( i = 0 ; i < sapContext->numofChannel ; i++)
+                    if (NV_CHANNEL_ENABLE ==
+                        vos_nv_getChannelEnabledState(sapContext->channelList[i]))
+                    {
+                        sapContext->channel = sapContext->channelList[i];
+                    }
+                    vos_mem_free(sapContext->channelList);
+                    sapContext->channelList = NULL;
             }
+#ifdef FEATURE_WLAN_CH_AVOID
+            else
+            {
+                for( i = 0; i < NUM_20MHZ_RF_CHANNELS; i++ )
+                {
+                    if((NV_CHANNEL_ENABLE ==
+                        vos_nv_getChannelEnabledState(safeChannels[i].channelNumber))
+                            && (VOS_TRUE == safeChannels[i].isSafe))
+                    {
+                        sapContext->channel = safeChannels[i].channelNumber;
+                        break;
+                    }
+                }
+            }
+#endif
 #endif
             /* Fill in the event structure */
             sapEventInit(sapEvent);
@@ -909,6 +903,22 @@ sapSignalHDDevent
             vos_mem_copy( &sapApAppEvent.sapevt.sapPBCProbeReqEvent.WPSPBCProbeReq,
                           pCsrRoamInfo->u.pWPSPBCProbeReq,
                           sizeof(tSirWPSPBCProbeReq));
+            break;
+
+       case eSAP_INDICATE_MGMT_FRAME:
+            VOS_TRACE( VOS_MODULE_ID_SAP, VOS_TRACE_LEVEL_INFO_HIGH,
+                       FL("SAP event callback event = %s"),
+                          "eSAP_INDICATE_MGMT_FRAME");
+            sapApAppEvent.sapHddEventCode = eSAP_INDICATE_MGMT_FRAME;
+            sapApAppEvent.sapevt.sapManagementFrameInfo.nFrameLength
+                                           = pCsrRoamInfo->nFrameLength;
+            sapApAppEvent.sapevt.sapManagementFrameInfo.pbFrames
+                                           = pCsrRoamInfo->pbFrames;
+            sapApAppEvent.sapevt.sapManagementFrameInfo.frameType
+                                           = pCsrRoamInfo->frameType;
+            sapApAppEvent.sapevt.sapManagementFrameInfo.rxChan
+                                           = pCsrRoamInfo->rxChan;
+
             break;
        case eSAP_REMAIN_CHAN_READY:
             VOS_TRACE( VOS_MODULE_ID_SAP, VOS_TRACE_LEVEL_INFO_HIGH,

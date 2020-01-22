@@ -1521,10 +1521,8 @@ __limProcessSmeScanReq(tpAniSirGlobal pMac, tANI_U32 *pMsgBuf)
               pMlmScanReq->maxChannelTime = pScanReq->maxChannelTime;
           }
 
-          pMlmScanReq->min_chntime_btc_esco =
-                   pScanReq->min_chntime_btc_esco;
-          pMlmScanReq->max_chntime_btc_esco =
-                   pScanReq->max_chntime_btc_esco;
+          pMlmScanReq->minChannelTimeBtc = pScanReq->minChannelTimeBtc;
+          pMlmScanReq->maxChannelTimeBtc = pScanReq->maxChannelTimeBtc;
           pMlmScanReq->dot11mode = pScanReq->dot11mode;
           pMlmScanReq->p2pSearch = pScanReq->p2pSearch;
 
@@ -1699,8 +1697,8 @@ __limProcessSmeJoinReq(tpAniSirGlobal pMac, tANI_U32 *pMsgBuf)
     tANI_U16            nSize;
     tANI_U8             sessionId;
     tpPESession         psessionEntry = NULL;
-    tANI_U8             smesessionId = 0;
-    tANI_U16            smetransactionId = 0;
+    tANI_U8             smesessionId;
+    tANI_U16            smetransactionId;
     tPowerdBm           localPowerConstraint = 0, regMax = 0;
     tANI_U16            ieLen;
     v_U8_t              *vendorIE;
@@ -2020,8 +2018,7 @@ __limProcessSmeJoinReq(tpAniSirGlobal pMac, tANI_U32 *pMsgBuf)
         {
             limLog(pMac, LOGP, FL("call to AllocateMemory "
                                 "failed for mlmJoinReq"));
-            retCode = eSIR_SME_RESOURCES_UNAVAILABLE;
-            goto end;
+            return;
         }
         (void) vos_mem_set((void *) pMlmJoinReq, val, 0);
 
@@ -3491,7 +3488,7 @@ void limProcessSmeGetScanChannelInfo(tpAniSirGlobal pMac, tANI_U32 *pMsgBuf)
 
 void limProcessSmeGetAssocSTAsInfo(tpAniSirGlobal pMac, tANI_U32 *pMsgBuf)
 {
-    tSirSmeGetAssocSTAsReq  getAssocSTAsReq = {0};
+    tSirSmeGetAssocSTAsReq  getAssocSTAsReq;
     tpDphHashNode           pStaDs = NULL;
     tpPESession             psessionEntry = NULL;
     tSap_Event              sapEvent;
@@ -5478,35 +5475,6 @@ __limProcessSmeSpoofMacAddrRequest(tpAniSirGlobal pMac, tANI_U32 *pMsgBuf)
 }
 
 /**
- * lim_register_mgmt_frame_ind_cb() - Save the Management frame
- * indication callback in PE.
- * @pMac: Mac pointer
- * @pMsgBuf: Msg pointer containing the callback
- *
- * This function is used save the Management frame
- * indication callback in PE.
- *
- * Return: None
- */
-static void lim_register_mgmt_frame_ind_cb(tpAniSirGlobal pMac,
-                                                 tANI_U32 *msg_buf)
-{
-  struct sir_sme_mgmt_frame_cb_req *sme_req =
-             (struct sir_sme_mgmt_frame_cb_req *)msg_buf;
-
-  if (NULL == msg_buf)
-  {
-      limLog(pMac, LOGE, FL("msg_buf is null"));
-      return;
-  }
-  if (sme_req->callback)
-      pMac->mgmt_frame_ind_cb =
-             (sir_mgmt_frame_ind_callback)sme_req->callback;
-  else
-      limLog(pMac, LOGE, FL("sme_req->callback is null"));
-}
-
-/**
  * limProcessSmeReqMessages()
  *
  *FUNCTION:
@@ -5839,9 +5807,7 @@ limProcessSmeReqMessages(tpAniSirGlobal pMac, tpSirMsgQ pMsg)
         case eWNI_SME_MAC_SPOOF_ADDR_IND:
             __limProcessSmeSpoofMacAddrRequest(pMac,  pMsgBuf);
             break ;
-        case eWNI_SME_REGISTER_MGMT_FRAME_CB:
-            lim_register_mgmt_frame_ind_cb(pMac, pMsgBuf);
-            break;
+
         default:
             vos_mem_free((v_VOID_t*)pMsg->bodyptr);
             pMsg->bodyptr = NULL;

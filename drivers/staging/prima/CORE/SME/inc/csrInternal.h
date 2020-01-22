@@ -585,10 +585,8 @@ typedef struct tagCsrConfig
 
     tANI_U32  nInitialDwellTime;     //in units of milliseconds
 
-    uint32_t  min_chntime_btc_esco;     //in units of milliseconds
-    uint32_t  max_chntime_btc_esco;     //in units of milliseconds
-    uint32_t  min_chntime_btc_sco;
-    uint32_t  max_chntime_btc_sco;
+    tANI_U32  nActiveMinChnTimeBtc;     //in units of milliseconds
+    tANI_U32  nActiveMaxChnTimeBtc;     //in units of milliseconds
     tANI_U8   disableAggWithBtc;
 #ifdef WLAN_AP_STA_CONCURRENCY
     tANI_U32  nPassiveMinChnTimeConc;    //in units of milliseconds
@@ -622,15 +620,6 @@ typedef struct tagCsrConfig
 #ifdef WLAN_FEATURE_ROAM_SCAN_OFFLOAD
     tANI_U8      isRoamOffloadScanEnabled;
     tANI_BOOLEAN bFastRoamInConIniFeatureEnabled;
-    v_BOOL_t     isPERRoamEnabled;
-    v_BOOL_t     isPERRoamCCAEnabled;
-    v_S15_t      PERRoamFullScanThreshold;
-    v_S15_t      PERMinRssiThresholdForRoam;
-    tANI_U32     rateUpThreshold;
-    tANI_U32     rateDownThreshold;
-    tANI_U32     waitPeriodForNextPERScan;
-    tANI_U32     PERtimerThreshold;
-    tANI_U32     PERroamTriggerPercent;
 #endif
 #endif
 
@@ -693,19 +682,6 @@ typedef struct tagCsrConfig
     tANI_U8 roamDelayStatsEnabled;
     tANI_BOOLEAN ignorePeerHTopMode;
     tANI_BOOLEAN disableP2PMacSpoofing;
-    uint32_t enable_edca_params;
-    uint32_t edca_vo_cwmin;
-    uint32_t edca_vi_cwmin;
-    uint32_t edca_bk_cwmin;
-    uint32_t edca_be_cwmin;
-    uint32_t edca_vo_cwmax;
-    uint32_t edca_vi_cwmax;
-    uint32_t edca_bk_cwmax;
-    uint32_t edca_be_cwmax;
-    uint32_t edca_vo_aifs;
-    uint32_t edca_vi_aifs;
-    uint32_t edca_bk_aifs;
-    uint32_t edca_be_aifs;
 }tCsrConfig;
 
 typedef struct tagCsrChannelPowerInfo
@@ -751,6 +727,7 @@ typedef struct tagCsrScanStruct
     vos_timer_t hTimerStaApConcTimer;
 #endif
     vos_timer_t hTimerIdleScan;
+    vos_timer_t hTimerResultCfgAging;
     tPalTimerHandle hTimerBgScan;
     //changes on every scan, it is used as a flag for whether 11d info is found on every scan
     tANI_U8 channelOf11dInfo;

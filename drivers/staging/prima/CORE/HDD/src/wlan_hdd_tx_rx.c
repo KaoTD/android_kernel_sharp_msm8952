@@ -90,7 +90,6 @@ const v_U8_t hdd_QdiscAcToTlAC[] = {
 #define HDD_TX_STALL_SSR_THRESHOLD        5
 #define HDD_TX_STALL_SSR_THRESHOLD_HIGH   13
 #define HDD_TX_STALL_RECOVERY_THRESHOLD HDD_TX_STALL_SSR_THRESHOLD - 2
-#define HDD_TX_STALL_KICKDXE_THRESHOLD  HDD_TX_STALL_SSR_THRESHOLD - 4
 
 int gRatefromIdx[] = {
  10,20,55,100,
@@ -1167,13 +1166,6 @@ void __hdd_tx_timeout(struct net_device *dev)
                 FL("TL is not in authenticated state so skipping SSR"));
       pAdapter->hdd_stats.hddTxRxStats.continuousTxTimeoutCount = 0;
       goto print_log;
-   }
-   if (pAdapter->hdd_stats.hddTxRxStats.continuousTxTimeoutCount ==
-          HDD_TX_STALL_KICKDXE_THRESHOLD)
-   {
-      VOS_TRACE(VOS_MODULE_ID_HDD_SAP_DATA, VOS_TRACE_LEVEL_ERROR,
-                "%s: Request Kick DXE for recovery",__func__);
-      WLANTL_TLDebugMessage(WLANTL_DEBUG_KICKDXE);
    }
    if (pAdapter->hdd_stats.hddTxRxStats.continuousTxTimeoutCount ==
           HDD_TX_STALL_RECOVERY_THRESHOLD)
@@ -2647,13 +2639,6 @@ VOS_STATUS hdd_rx_packet_cbk( v_VOID_t *vosContext,
             VOS_TRACE(VOS_MODULE_ID_HDD, VOS_TRACE_LEVEL_INFO,
                       "STA RX ARP");
          }
-      }
-
-      if (pHddCtx->rx_wow_dump) {
-          if (!(VOS_PKT_PROTO_TYPE_ARP & proto_type) &&
-              !(VOS_PKT_PROTO_TYPE_EAPOL & proto_type))
-             hdd_log_ip_addr(skb);
-          pHddCtx->rx_wow_dump = false;
       }
 
       if (pHddCtx->cfg_ini->gEnableRoamDelayStats)

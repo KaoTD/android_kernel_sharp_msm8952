@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012-2016 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2012-2015 The Linux Foundation. All rights reserved.
  *
  * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
  *
@@ -123,59 +123,6 @@ typedef struct
 // loaded on driver initialization if available
 
 #ifdef CONFIG_ENABLE_LINUX_REG
-static struct
-chan_to_ht_40_index_map chan_to_ht_40_index[NUM_20MHZ_RF_CHANNELS] =
-{
-  /* ht_40_minus_index, ht_40_plus_index */
-  {INVALID_RF_CHANNEL, RF_CHAN_BOND_3},    //RF_CHAN_1,
-  {INVALID_RF_CHANNEL, RF_CHAN_BOND_4},    //RF_CHAN_2,
-  {INVALID_RF_CHANNEL, RF_CHAN_BOND_5},    //RF_CHAN_3,
-  {INVALID_RF_CHANNEL, RF_CHAN_BOND_6},    //RF_CHAN_4,
-  {RF_CHAN_BOND_3, RF_CHAN_BOND_7},        //RF_CHAN_5,
-  {RF_CHAN_BOND_4, RF_CHAN_BOND_8},        //RF_CHAN_6,
-  {RF_CHAN_BOND_5, RF_CHAN_BOND_9},        //RF_CHAN_7,
-  {RF_CHAN_BOND_6, RF_CHAN_BOND_10},       //RF_CHAN_8,
-  {RF_CHAN_BOND_7, RF_CHAN_BOND_11},       //RF_CHAN_9,
-  {RF_CHAN_BOND_8, INVALID_RF_CHANNEL},    //RF_CHAN_10,
-  {RF_CHAN_BOND_9, INVALID_RF_CHANNEL},    //RF_CHAN_11,
-  {RF_CHAN_BOND_10, INVALID_RF_CHANNEL},   //RF_CHAN_12,
-  {RF_CHAN_BOND_11, INVALID_RF_CHANNEL},   //RF_CHAN_13,
-  {INVALID_RF_CHANNEL, INVALID_RF_CHANNEL},//RF_CHAN_14,
-  {INVALID_RF_CHANNEL, RF_CHAN_BOND_242},  //RF_CHAN_240,
-  {RF_CHAN_BOND_242, RF_CHAN_BOND_246},    //RF_CHAN_244,
-  {RF_CHAN_BOND_246, RF_CHAN_BOND_250},    //RF_CHAN_248,
-  {RF_CHAN_BOND_250, INVALID_RF_CHANNEL},  //RF_CHAN_252,
-  {INVALID_RF_CHANNEL, RF_CHAN_BOND_210},  //RF_CHAN_208,
-  {RF_CHAN_BOND_210, RF_CHAN_BOND_214},    //RF_CHAN_212,
-  {RF_CHAN_BOND_214, INVALID_RF_CHANNEL},  //RF_CHAN_216,
-  {INVALID_RF_CHANNEL, RF_CHAN_BOND_38},   //RF_CHAN_36,
-  {RF_CHAN_BOND_38, RF_CHAN_BOND_42},      //RF_CHAN_40,
-  {RF_CHAN_BOND_42, RF_CHAN_BOND_46},      //RF_CHAN_44,
-  {RF_CHAN_BOND_46, RF_CHAN_BOND_50},      //RF_CHAN_48,
-  {RF_CHAN_BOND_50, RF_CHAN_BOND_54},      //RF_CHAN_52,
-  {RF_CHAN_BOND_54, RF_CHAN_BOND_58},      //RF_CHAN_56,
-  {RF_CHAN_BOND_58, RF_CHAN_BOND_62},      //RF_CHAN_60,
-  {RF_CHAN_BOND_62, INVALID_RF_CHANNEL},   //RF_CHAN_64,
-  {INVALID_RF_CHANNEL, RF_CHAN_BOND_102},  //RF_CHAN_100,
-  {RF_CHAN_BOND_102, RF_CHAN_BOND_106},    //RF_CHAN_104,
-  {RF_CHAN_BOND_106, RF_CHAN_BOND_110},    //RF_CHAN_108,
-  {RF_CHAN_BOND_110, RF_CHAN_BOND_114},    //RF_CHAN_112,
-  {RF_CHAN_BOND_114, RF_CHAN_BOND_118},    //RF_CHAN_116,
-  {RF_CHAN_BOND_118, RF_CHAN_BOND_122},    //RF_CHAN_120,
-  {RF_CHAN_BOND_122, RF_CHAN_BOND_126},    //RF_CHAN_124,
-  {RF_CHAN_BOND_126, RF_CHAN_BOND_130},    //RF_CHAN_128,
-  {RF_CHAN_BOND_130, RF_CHAN_BOND_134},    //RF_CHAN_132,
-  {RF_CHAN_BOND_134, RF_CHAN_BOND_138},    //RF_CHAN_136,
-  {RF_CHAN_BOND_138, RF_CHAN_BOND_142},    //RF_CHAN_140,
-#ifdef FEATURE_WLAN_CH144
-  {RF_CHAN_BOND_142, INVALID_RF_CHANNEL},  //RF_CHAN_144,
-#endif /* FEATURE_WLAN_CH144 */
-  {INVALID_RF_CHANNEL, RF_CHAN_BOND_151},  //RF_CHAN_149,
-  {RF_CHAN_BOND_151, RF_CHAN_BOND_155},    //RF_CHAN_153,
-  {RF_CHAN_BOND_155, RF_CHAN_BOND_159},    //RF_CHAN_157,
-  {RF_CHAN_BOND_159, RF_CHAN_BOND_163},    //RF_CHAN_161,
-  {RF_CHAN_BOND_163, INVALID_RF_CHANNEL},  //RF_CHAN_165,
-};
 
 static CountryInfoTable_t countryInfoTable =
 {
@@ -183,136 +130,136 @@ static CountryInfoTable_t countryInfoTable =
     138,
     {
       {REGDOMAIN_WORLD, {'0', '0'}}, // WORLD DOMAIN
-      {REGDOMAIN_ETSI, {'A', 'D'}}, // ANDORRA
+      {REGDOMAIN_FCC, {'A', 'D'}}, // ANDORRA
       {REGDOMAIN_ETSI, {'A', 'E'}}, //UAE
       {REGDOMAIN_ETSI, {'A', 'L'}}, //ALBANIA
       {REGDOMAIN_ETSI, {'A', 'M'}}, //ARMENIA
       {REGDOMAIN_ETSI, {'A', 'N'}}, //NETHERLANDS ANTILLES
-      {REGDOMAIN_WORLD, {'A', 'R'}}, //ARGENTINA
+      {REGDOMAIN_FCC, {'A', 'R'}}, //ARGENTINA
       {REGDOMAIN_FCC, {'A', 'S'}}, //AMERICAN SOMOA
       {REGDOMAIN_ETSI, {'A', 'T'}}, //AUSTRIA
-      {REGDOMAIN_ETSI, {'A', 'U'}}, //AUSTRALIA
+      {REGDOMAIN_FCC, {'A', 'U'}}, //AUSTRALIA
       {REGDOMAIN_ETSI , {'A', 'W'}}, //ARUBA
       {REGDOMAIN_ETSI,  {'A', 'Z'}}, //AZERBAIJAN
       {REGDOMAIN_ETSI, {'B', 'A'}}, //BOSNIA AND HERZEGOVINA
-      {REGDOMAIN_APAC, {'B', 'B'}}, //BARBADOS
+      {REGDOMAIN_FCC, {'B', 'B'}}, //BARBADOS
       {REGDOMAIN_ETSI, {'B', 'D'}}, //BANGLADESH
       {REGDOMAIN_ETSI, { 'B', 'E'}}, //BELGIUM
       {REGDOMAIN_ETSI, {'B', 'G'}}, //BULGARIA
-      {REGDOMAIN_APAC, {'B', 'H'}}, //BAHRAIN
+      {REGDOMAIN_ETSI, {'B', 'H'}}, //BAHRAIN
       {REGDOMAIN_ETSI, {'B', 'L'}}, //
       {REGDOMAIN_FCC, {'B', 'M'}}, //BERMUDA
-      {REGDOMAIN_APAC, {'B', 'N'}}, //BRUNEI DARUSSALAM
+      {REGDOMAIN_ETSI, {'B', 'N'}}, //BRUNEI DARUSSALAM
       {REGDOMAIN_ETSI, {'B', 'O'}}, //BOLIVIA
-      {REGDOMAIN_WORLD, {'B', 'R'}}, //BRAZIL
-      {REGDOMAIN_APAC, {'B', 'S'}}, //BAHAMAS
+      {REGDOMAIN_ETSI, {'B', 'R'}}, //BRAZIL
+      {REGDOMAIN_FCC, {'B', 'S'}}, //BAHAMAS
       {REGDOMAIN_ETSI, {'B', 'Y'}}, //BELARUS
       {REGDOMAIN_ETSI, {'B', 'Z'}}, //BELIZE
       {REGDOMAIN_FCC, {'C', 'A'}}, //CANADA
       {REGDOMAIN_ETSI, {'C', 'H'}}, //SWITZERLAND
-      {REGDOMAIN_APAC, {'C', 'L'}}, //CHILE
-      {REGDOMAIN_APAC, {'C', 'N'}}, //CHINA
-      {REGDOMAIN_APAC, {'C', 'O'}}, //COLOMBIA
-      {REGDOMAIN_APAC, {'C', 'R'}}, //COSTA RICA
+      {REGDOMAIN_ETSI, {'C', 'L'}}, //CHILE
+      {REGDOMAIN_FCC, {'C', 'N'}}, //CHINA
+      {REGDOMAIN_FCC, {'C', 'O'}}, //COLOMBIA
+      {REGDOMAIN_ETSI, {'C', 'R'}}, //COSTA RICA
       {REGDOMAIN_ETSI, {'C', 'S'}},
       {REGDOMAIN_ETSI, {'C', 'Y'}}, //CYPRUS
       {REGDOMAIN_ETSI, {'C', 'Z'}}, //CZECH REPUBLIC
       {REGDOMAIN_ETSI, {'D', 'E'}}, //GERMANY
       {REGDOMAIN_ETSI, {'D', 'K'}}, //DENMARK
-      {REGDOMAIN_APAC, {'D', 'O'}}, //DOMINICAN REPUBLIC
+      {REGDOMAIN_FCC, {'D', 'O'}}, //DOMINICAN REPUBLIC
       {REGDOMAIN_ETSI, {'D', 'Z'}}, //ALGERIA
-      {REGDOMAIN_APAC, {'E', 'C'}}, //ECUADOR
+      {REGDOMAIN_ETSI, {'E', 'C'}}, //ECUADOR
       {REGDOMAIN_ETSI, {'E', 'E'}}, //ESTONIA
       {REGDOMAIN_ETSI, {'E', 'G'}}, //EGYPT
       {REGDOMAIN_ETSI, {'E', 'S'}}, //SPAIN
       {REGDOMAIN_ETSI, {'F', 'I'}}, //FINLAND
       {REGDOMAIN_ETSI, {'F', 'R'}}, //FRANCE
       {REGDOMAIN_ETSI, {'G', 'B'}}, //UNITED KINGDOM
-      {REGDOMAIN_WORLD, {'G', 'D'}},  //GRENADA
+      {REGDOMAIN_FCC, {'G', 'D'}},  //GRENADA
       {REGDOMAIN_ETSI, {'G', 'E'}}, //GEORGIA
       {REGDOMAIN_ETSI, {'G', 'F'}}, //FRENCH GUIANA
       {REGDOMAIN_ETSI, {'G', 'L'}}, //GREENLAND
       {REGDOMAIN_ETSI, {'G', 'P'}}, //GUADELOUPE
       {REGDOMAIN_ETSI, {'G', 'R'}}, //GREECE
-      {REGDOMAIN_APAC, {'G', 'T'}},  //GUATEMALA
+      {REGDOMAIN_FCC, {'G', 'T'}},  //GUATEMALA
       {REGDOMAIN_FCC, {'G', 'U'}},  //GUAM
       {REGDOMAIN_ETSI, {'H', 'U'}}, //HUNGARY
-      {REGDOMAIN_ETSI, {'I', 'D'}},  //INDONESIA
+      {REGDOMAIN_FCC, {'I', 'D'}},  //INDONESIA
       {REGDOMAIN_ETSI, {'I', 'E'}}, //IRELAND
       {REGDOMAIN_ETSI, {'I', 'L'}}, //ISRAEL
       {REGDOMAIN_APAC, {'I', 'N'}}, //INDIA
       {REGDOMAIN_ETSI, {'I', 'R'}}, //IRAN, ISLAMIC REPUBLIC OF
       {REGDOMAIN_ETSI, {'I', 'S'}}, //ICELNAD
       {REGDOMAIN_ETSI, {'I', 'T'}}, //ITALY
-      {REGDOMAIN_WORLD, {'J', 'M'}},  //JAMAICA
+      {REGDOMAIN_FCC, {'J', 'M'}},  //JAMAICA
       {REGDOMAIN_JAPAN, {'J', 'P'}}, //JAPAN
-      {REGDOMAIN_APAC, {'J', 'O'}}, //JORDAN
+      {REGDOMAIN_ETSI, {'J', 'O'}}, //JORDAN
       {REGDOMAIN_ETSI, {'K', 'E'}}, //KENYA
       {REGDOMAIN_ETSI, {'K', 'H'}}, //CAMBODIA
-      {REGDOMAIN_WORLD, {'K', 'P'}}, //KOREA, DEMOCRATIC PEOPLE's REPUBLIC OF
-      {REGDOMAIN_KOREA, {'K', 'R'}}, //KOREA, REPUBLIC OF
+      {REGDOMAIN_ETSI, {'K', 'P'}}, //KOREA, DEMOCRATIC PEOPLE's REPUBLIC OF
+      {REGDOMAIN_ETSI, {'K', 'R'}}, //KOREA, REPUBLIC OF
       {REGDOMAIN_ETSI, {'K', 'W'}}, //KUWAIT
-      {REGDOMAIN_WORLD, {'K', 'Z'}}, //KAZAKHSTAN
-      {REGDOMAIN_WORLD, {'L', 'B'}}, //LEBANON
+      {REGDOMAIN_ETSI, {'K', 'Z'}}, //KAZAKHSTAN
+      {REGDOMAIN_ETSI, {'L', 'B'}}, //LEBANON
       {REGDOMAIN_ETSI, {'L', 'I'}}, //LIECHTENSTEIN
-      {REGDOMAIN_WORLD, {'L', 'K'}}, //SRI-LANKA
+      {REGDOMAIN_ETSI, {'L', 'K'}}, //SRI-LANKA
       {REGDOMAIN_ETSI, {'L', 'T'}}, //LITHUANIA
       {REGDOMAIN_ETSI, {'L', 'U'}}, //LUXEMBOURG
       {REGDOMAIN_ETSI, {'L','V'}},  //LATVIA
       {REGDOMAIN_ETSI, {'M', 'A'}}, //MOROCCO
       {REGDOMAIN_ETSI, {'M', 'C'}}, //MONACO
       {REGDOMAIN_ETSI, {'M', 'K'}}, //MACEDONIA, THE FORMER YUGOSLAV REPUBLIC OF
-      {REGDOMAIN_WORLD, {'M','N'}}, //MONGOLIA
-      {REGDOMAIN_APAC, {'M', 'O'}}, //MACAO
+      {REGDOMAIN_FCC, {'M','N'}}, //MONGOLIA
+      {REGDOMAIN_FCC, {'M', 'O'}}, //MACAO
       {REGDOMAIN_FCC, {'M', 'P'}}, //NORTHERN MARIANA ISLANDS
       {REGDOMAIN_ETSI, {'M', 'Q'}}, //MARTINIQUE
-      {REGDOMAIN_ETSI, {'M', 'T'}}, //MALTA
+      {REGDOMAIN_FCC, {'M', 'T'}}, //MALTA
       {REGDOMAIN_ETSI, {'M', 'U'}}, //MAURITIUS
       {REGDOMAIN_ETSI, {'M', 'W'}}, //MALAWI
-      {REGDOMAIN_APAC, {'M', 'X'}}, //MEXICO
-      {REGDOMAIN_APAC, {'M', 'Y'}}, //MALAYSIA
-      {REGDOMAIN_WORLD, {'N', 'G'}}, //NIGERIA
-      {REGDOMAIN_WORLD, {'N', 'I'}}, //NICARAGUA
+      {REGDOMAIN_FCC, {'M', 'X'}}, //MEXICO
+      {REGDOMAIN_ETSI, {'M', 'Y'}}, //MALAYSIA
+      {REGDOMAIN_ETSI, {'N', 'G'}}, //NIGERIA
+      {REGDOMAIN_FCC, {'N', 'I'}}, //NICARAGUA
       {REGDOMAIN_ETSI, {'N', 'L'}}, //NETHERLANDS
       {REGDOMAIN_ETSI, {'N', 'O'}}, //NORWAY
-      {REGDOMAIN_APAC, {'N', 'P'}}, //NEPAL
-      {REGDOMAIN_APAC, {'N', 'Z'}}, //NEW-ZEALAND
-      {REGDOMAIN_ETSI, {'O', 'M'}}, //OMAN
-      {REGDOMAIN_APAC, {'P', 'A'}}, //PANAMA
-      {REGDOMAIN_WORLD, {'P', 'E'}}, //PERU
+      {REGDOMAIN_ETSI, {'N', 'P'}}, //NEPAL
+      {REGDOMAIN_FCC, {'N', 'Z'}}, //NEW-ZEALAND
+      {REGDOMAIN_FCC, {'O', 'M'}}, //OMAN
+      {REGDOMAIN_FCC, {'P', 'A'}}, //PANAMA
+      {REGDOMAIN_ETSI, {'P', 'E'}}, //PERU
       {REGDOMAIN_ETSI, {'P', 'F'}}, //FRENCH POLYNESIA
-      {REGDOMAIN_WORLD, {'P', 'G'}}, //PAPUA NEW GUINEA
-      {REGDOMAIN_WORLD, {'P', 'H'}}, //PHILIPPINES
+      {REGDOMAIN_ETSI, {'P', 'G'}}, //PAPUA NEW GUINEA
+      {REGDOMAIN_FCC, {'P', 'H'}}, //PHILIPPINES
       {REGDOMAIN_ETSI, {'P', 'K'}}, //PAKISTAN
       {REGDOMAIN_ETSI, {'P', 'L'}}, //POLAND
       {REGDOMAIN_FCC, {'P', 'R'}}, //PUERTO RICO
-      {REGDOMAIN_WORLD, {'P', 'S'}}, //PALESTINIAN TERRITORY, OCCUPIED
+      {REGDOMAIN_FCC, {'P', 'S'}}, //PALESTINIAN TERRITORY, OCCUPIED
       {REGDOMAIN_ETSI, {'P', 'T'}}, //PORTUGAL
-      {REGDOMAIN_WORLD, {'P', 'Y'}}, //PARAGUAY
+      {REGDOMAIN_FCC, {'P', 'Y'}}, //PARAGUAY
       {REGDOMAIN_ETSI, {'Q', 'A'}}, //QATAR
       {REGDOMAIN_ETSI, {'R', 'E'}}, //REUNION
       {REGDOMAIN_ETSI, {'R', 'O'}}, //ROMAINIA
       {REGDOMAIN_ETSI, {'R', 'S'}}, //SERBIA
-      {REGDOMAIN_APAC, {'R', 'U'}}, //RUSSIA
-      {REGDOMAIN_WORLD, {'R', 'W'}}, //RWANDA
-      {REGDOMAIN_WORLD, {'S', 'A'}}, //SAUDI ARABIA
+      {REGDOMAIN_ETSI, {'R', 'U'}}, //RUSSIA
+      {REGDOMAIN_FCC, {'R', 'W'}}, //RWANDA
+      {REGDOMAIN_ETSI, {'S', 'A'}}, //SAUDI ARABIA
       {REGDOMAIN_ETSI, {'S', 'E'}}, //SWEDEN
-      {REGDOMAIN_APAC, {'S', 'G'}}, //SINGAPORE
+      {REGDOMAIN_ETSI, {'S', 'G'}}, //SINGAPORE
       {REGDOMAIN_ETSI, {'S', 'I'}}, //SLOVENNIA
       {REGDOMAIN_ETSI, {'S', 'K'}}, //SLOVAKIA
-      {REGDOMAIN_APAC, {'S', 'V'}}, //EL SALVADOR
+      {REGDOMAIN_ETSI, {'S', 'V'}}, //EL SALVADOR
       {REGDOMAIN_ETSI, {'S', 'Y'}}, //SYRIAN ARAB REPUBLIC
-      {REGDOMAIN_WORLD, {'T', 'H'}}, //THAILAND
+      {REGDOMAIN_ETSI, {'T', 'H'}}, //THAILAND
       {REGDOMAIN_ETSI, {'T', 'N'}}, //TUNISIA
       {REGDOMAIN_ETSI, {'T', 'R'}}, //TURKEY
-      {REGDOMAIN_WORLD, {'T', 'T'}}, //TRINIDAD AND TOBAGO
+      {REGDOMAIN_ETSI, {'T', 'T'}}, //TRINIDAD AND TOBAGO
       {REGDOMAIN_FCC, {'T', 'W'}}, //TAIWAN, PRIVINCE OF CHINA
-      {REGDOMAIN_ETSI, {'T', 'Z'}}, //TANZANIA, UNITED REPUBLIC OF
-      {REGDOMAIN_WORLD, {'U', 'A'}}, //UKRAINE
-      {REGDOMAIN_KOREA, {'U', 'G'}}, //UGANDA
+      {REGDOMAIN_FCC, {'T', 'Z'}}, //TANZANIA, UNITED REPUBLIC OF
+      {REGDOMAIN_ETSI, {'U', 'A'}}, //UKRAINE
+      {REGDOMAIN_ETSI, {'U', 'G'}}, //UGANDA
       {REGDOMAIN_FCC, {'U', 'S'}}, //USA
-      {REGDOMAIN_WORLD, {'U', 'Y'}}, //URUGUAY
-      {REGDOMAIN_ETSI, {'U', 'Z'}}, //UZBEKISTAN
+      {REGDOMAIN_ETSI, {'U', 'Y'}}, //URUGUAY
+      {REGDOMAIN_FCC, {'U', 'Z'}}, //UZBEKISTAN
       {REGDOMAIN_ETSI, {'V', 'E'}}, //VENEZUELA
       {REGDOMAIN_FCC, {'V', 'I'}}, //VIRGIN ISLANDS, US
       {REGDOMAIN_ETSI, {'V', 'N'}}, //VIETNAM
@@ -3309,19 +3256,81 @@ v_BOOL_t vos_is_channel_valid_for_vht80(v_U32_t chan)
 
 #ifdef CONFIG_ENABLE_LINUX_REG
 
-static inline int bw20_ch_index_to_bw40_plus_minus_ch_index(int k,
+static int bw20_ch_index_to_bw40_plus_minus_ch_index(int k,
                                     eChannnelBondingTypes cbflag )
 {
-   if (k >= NUM_20MHZ_RF_CHANNELS) {
-     VOS_TRACE(VOS_MODULE_ID_VOSS, VOS_TRACE_LEVEL_ERROR,
-           "%s invlaid channel index %d",__func__, k);
-     return INVALID_RF_CHANNEL;
-   }
+   int m = INVALID_RF_CHANNEL;
+   if (k >= RF_CHAN_1 && k <= RF_CHAN_14)
+   {
+      if(RF_CHAN_BOND_HT40_PLUS == cbflag)
+         m = k - RF_CHAN_1 + RF_CHAN_BOND_3 ;
+      else
+         m = k - RF_CHAN_1 + RF_CHAN_BOND_3 - HT_40MINUS_INDEX ;
 
-   if (RF_CHAN_BOND_HT40_PLUS == cbflag)
-     return chan_to_ht_40_index[k].ht_40_plus_index;
-   else
-     return chan_to_ht_40_index[k].ht_40_minus_index;
+      if (m > RF_CHAN_BOND_11)
+         m = INVALID_RF_CHANNEL;
+      if (m < RF_CHAN_BOND_3)
+         m = INVALID_RF_CHANNEL;
+   }
+   else if (k >= RF_CHAN_240 && k <= RF_CHAN_216)
+   {
+      if(RF_CHAN_BOND_HT40_PLUS == cbflag)
+         m = k - RF_CHAN_240 + RF_CHAN_BOND_242 ;
+      else
+         m = k - RF_CHAN_240 + RF_CHAN_BOND_242 - HT_40MINUS_INDEX;
+
+      if (m > RF_CHAN_BOND_214)
+         m = INVALID_RF_CHANNEL;
+      if (m < RF_CHAN_BOND_242)
+         m = INVALID_RF_CHANNEL;
+   }
+   else if (k >= RF_CHAN_36 && k <= RF_CHAN_64)
+   {
+      if(RF_CHAN_BOND_HT40_PLUS == cbflag)
+         m = k - RF_CHAN_36 + RF_CHAN_BOND_38;
+      else
+         m = k - RF_CHAN_36 + RF_CHAN_BOND_38 - HT_40MINUS_INDEX;
+
+      if (m > RF_CHAN_BOND_62)
+         m = INVALID_RF_CHANNEL;
+      if (m < RF_CHAN_BOND_38)
+         m = INVALID_RF_CHANNEL;
+   }
+#ifdef FEATURE_WLAN_CH144
+   else if (k >= RF_CHAN_100 && k <= RF_CHAN_144)
+#else
+   else if (k >= RF_CHAN_100 && k <= RF_CHAN_140)
+#endif /* FEATURE_WLAN_CH144 */
+   {
+      if(RF_CHAN_BOND_HT40_PLUS == cbflag)
+         m = k - RF_CHAN_100 + RF_CHAN_BOND_102;
+      else
+         m = k - RF_CHAN_100 + RF_CHAN_BOND_102 -  HT_40MINUS_INDEX;
+#ifdef FEATURE_WLAN_CH144
+      if (m > RF_CHAN_BOND_142)
+         m = INVALID_RF_CHANNEL;
+      if (m < RF_CHAN_BOND_102)
+         m = INVALID_RF_CHANNEL;
+#else
+      if (m > RF_CHAN_BOND_138)
+         m = INVALID_RF_CHANNEL;
+      if (m < RF_CHAN_BOND_102)
+         m = INVALID_RF_CHANNEL;
+#endif /* FEATURE_WLAN_CH144 */
+   }
+   else if (k >= RF_CHAN_149 && k <= RF_CHAN_165)
+   {
+      if(RF_CHAN_BOND_HT40_PLUS == cbflag)
+         m = k - RF_CHAN_149 + RF_CHAN_BOND_151;
+      else
+         m = k - RF_CHAN_149 + RF_CHAN_BOND_151 - HT_40MINUS_INDEX;
+
+      if (m > RF_CHAN_BOND_163)
+         m = INVALID_RF_CHANNEL;
+      if (m < RF_CHAN_BOND_151)
+         m = INVALID_RF_CHANNEL;
+   }
+   return m;
 }
 /**------------------------------------------------------------------------
   \brief vos_nv_setRegDomain -
@@ -3429,13 +3438,11 @@ VOS_STATUS vos_nv_getRegDomainFromCountryCode( v_REGDOMAIN_t *pRegDomain,
 
     if (REGDOMAIN_COUNT == temp_reg_domain) {
 
-        /* the country was not found in the driver database
-         * so we will return the REGDOMAIN_WORLD to SME/CSR
-         */
+        /* the country was not found in the driver database */
+        /* so we will return the REGDOMAIN_WORLD to SME/CSR */
 
-        VOS_TRACE(VOS_MODULE_ID_VOSS, VOS_TRACE_LEVEL_INFO,
-            ("Country %c%c does not map to any Regulatory domain"),
-               country_code[0], country_code[1]);
+        VOS_TRACE(VOS_MODULE_ID_VOSS, VOS_TRACE_LEVEL_ERROR,
+                   ("Country does not map to any Regulatory domain"));
 
         temp_reg_domain = REGDOMAIN_WORLD;
     }
@@ -4006,27 +4013,6 @@ int __wlan_hdd_linux_reg_notifier(struct wiphy *wiphy,
     if (request->initiator == NL80211_REGDOM_SET_BY_DRIVER)
     {
 
-        if (vos_is_load_unload_in_progress(VOS_MODULE_ID_VOSS, NULL)) {
-            temp_reg_domain = REGDOMAIN_COUNT;
-            /* lookup the country in the local database */
-            for (i = 0; i < countryInfoTable.countryCount &&
-                         REGDOMAIN_COUNT == temp_reg_domain; i++)
-            {
-                if (memcmp(request->alpha2, countryInfoTable.countryInfo[i].countryCode,
-                           VOS_COUNTRY_CODE_LEN) == 0)
-                {
-                /* country code is found */
-                /* record the temporary regulatory_domain as well */
-                temp_reg_domain = countryInfoTable.countryInfo[i].regDomain;
-                break;
-                }
-            }
-            if (REGDOMAIN_COUNT == temp_reg_domain)
-                temp_reg_domain = REGDOMAIN_WORLD;
-
-            cur_reg_domain = temp_reg_domain;
-        }
-
         isVHT80Allowed = pHddCtx->isVHT80Allowed;
         if (create_linux_regulatory_entry(wiphy, request, nBandCapability) == 0)
         {
@@ -4055,7 +4041,6 @@ int __wlan_hdd_linux_reg_notifier(struct wiphy *wiphy,
 
         if (!(pnvEFSTable->halnv.tables.defaultCountryTable.countryCode[0] == '0' &&
              pnvEFSTable->halnv.tables.defaultCountryTable.countryCode[1] == '0') &&
-            (request->initiator ==  NL80211_REGDOM_SET_BY_CORE) &&
             (vos_is_load_unload_in_progress( VOS_MODULE_ID_VOSS, NULL)))
         {
            VOS_TRACE(VOS_MODULE_ID_VOSS, VOS_TRACE_LEVEL_INFO,
@@ -4107,13 +4092,14 @@ int __wlan_hdd_linux_reg_notifier(struct wiphy *wiphy,
         if (request->alpha2[0] == '0' && request->alpha2[1] == '0')
         {
            sme_GenericChangeCountryCode(pHddCtx->hHal, country_code,
-                                       REGDOMAIN_COUNT);
+                                           REGDOMAIN_COUNT);
         }
         else
         {
            sme_GenericChangeCountryCode(pHddCtx->hHal, country_code,
-                                    temp_reg_domain);
+                                        temp_reg_domain);
         }
+
     }
 
     /* Mark channels 36-48 as passive for US CC */
